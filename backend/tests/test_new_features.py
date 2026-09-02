@@ -56,6 +56,10 @@ def test_vault():
     
     masked_text = data_mask["masked_text"]
     tokens = data_mask["tokens"]
+    # /vault/resolve is authenticated: the mask call issues the session's bearer
+    # secret and resolve will not return plaintext without it.
+    session_token = data_mask["session_token"]
+    auth = {"X-Vault-Token": session_token}
     
     # ensure raw numbers not in masked text
     assert "9876543210" not in masked_text
@@ -67,7 +71,7 @@ def test_vault():
     print(data_mask)
     
     # 2. resolve
-    resp_resolve = client.post("/vault/resolve", json={"session_id": session_id, "masked_text": masked_text})
+    resp_resolve = client.post("/vault/resolve", json={"session_id": session_id, "masked_text": masked_text}, headers=auth)
     assert resp_resolve.status_code == 200
     data_resolve = resp_resolve.json()
     
@@ -79,15 +83,15 @@ def test_vault():
     print("test_vault resolve passed!")
     print(data_resolve)
     
-    # 3. resolve with different session id
-    resp_resolve_diff = client.post("/vault/resolve", json={"session_id": "different-session", "masked_text": masked_text})
-    assert resp_resolve_diff.status_code == 200
-    data_resolve_diff = resp_resolve_diff.json()
-    
-    diff_resolved_text = data_resolve_diff["text"]
-    assert "9876543210" not in diff_resolved_text
-    assert "<PHONE_IN_" in diff_resolved_text
-    
+    # 3. a different session id is now rejected outright, not just unresolved
+    resp_resolve_diff = client.post(
+        "/vault/resolve",
+        json={"session_id": "different-session", "masked_text": masked_text},
+        headers=auth,
+    )
+    assert resp_resolve_diff.status_code == 401
+    assert "9876543210" not in resp_resolve_diff.text
+
     print("test_vault different session passed!")
 
 if __name__ == "__main__":

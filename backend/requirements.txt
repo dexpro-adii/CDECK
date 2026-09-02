@@ -8,3 +8,14 @@ sentence-transformers
 scikit-learn
 ollama
 python-dotenv
+# imported directly by detectors/jailbreak_detector.py -- a clean install
+# without this fails at import time
+google-generativeai
+# vault.py encrypts stored PII with Fernet
+cryptography
+# required by fastapi.testclient (starlette TestClient) for the pytest suite
+httpx
+
+# Presidio's PERSON recogniser needs a spaCy model, which pip cannot pull in
+# from requirements.txt:
+#   python -m spacy download en_core_web_lg

@@ -1,5 +1,6 @@
 import asyncio
-from fastapi import FastAPI
+from typing import Optional
+from fastapi import FastAPI, Header, HTTPException
 try:
     from ollama import AsyncClient
 except ImportError:
@@ -15,6 +16,7 @@ from tool_security import TOOL_RISK_MAP
 from detectors.pii_detector import detect_pii, redact_pii
 from detectors.jailbreak_detector import detect_jailbreak, is_code_mixed, evaluate_with_gemini_async
 from detectors.output_scanner import scan_output
+from vault import SessionVault
 from collections import defaultdict, deque
 
 
@@ -46,9 +48,43 @@ async def startup_event():
         except Exception as e:
             print(f"Warning: Failed to warm up Ollama model: {e}")
 
-# Vault stores
-vault_store = defaultdict(dict)
-vault_counts = defaultdict(lambda: defaultdict(int))
+# Session PII vault. Values are held encrypted with a TTL -- see vault.py and
+# the "Vault key custody" section of the README for the threat model and the
+# gaps this does NOT close.
+vault = SessionVault()
+
+
+def mask_with_vault(text, session_id, pii_entities):
+    """
+    Replaces each PII entity with a reversible vault placeholder (<TYPE_n>) and
+    records the original value under session_id so /vault/resolve can restore it.
+
+    Shared by /vault/mask and the retrieval rail (/analyze-content) so both use
+    one masking implementation.
+    """
+    priority = {"AADHAAR": 10, "PAN": 10, "PHONE_IN": 10, "PIN_CODE": 10}
+    sorted_entities = sorted(
+        pii_entities,
+        key=lambda x: (x.start, x.end - x.start, priority.get(x.type, 0)),
+        reverse=True
+    )
+
+    masked_text = text
+    last_start = len(text) + 1
+    tokens = []
+
+    for entity in sorted_entities:
+        if entity.end > last_start:
+            continue
+
+        placeholder = vault.next_placeholder(session_id, entity.type)
+        vault.store(session_id, placeholder, entity.value)
+        tokens.append(VaultToken(placeholder=placeholder, type=entity.type))
+
+        masked_text = masked_text[:entity.start] + placeholder + masked_text[entity.end:]
+        last_start = entity.start
+
+    return masked_text, tokens
 
 @app.post("/analyze", response_model=AnalyzeResponse)
 async def analyze_prompt(request: AnalyzeRequest):
@@ -141,13 +177,25 @@ async def deep_review(request: DeepReviewRequest):
 async def analyze_content(request: AnalyzeContentRequest):
     jailbreak_score, jb_category, jb_method, risk_level, matched_phrase, matched_phrase_similarity = detect_jailbreak(request.content)
     is_jailbreak = risk_level == "high"
-    
+
     blocked = False
     block_reason = None
     if is_jailbreak:
         blocked = True
         block_reason = "jailbreak_detected"
-        
+
+    # PII rail: retrieved content reaches the model's context just like user
+    # input does, so it gets the same treatment as the input rail. With a
+    # session_id the values are vaulted (reversible); without one they are
+    # redacted outright, which is the safer default for untrusted sources.
+    pii_entities = detect_pii(request.content)
+    session_token = None
+    if request.session_id:
+        safe_text, _ = mask_with_vault(request.content, request.session_id, pii_entities)
+        session_token = vault.session_token(request.session_id)
+    else:
+        safe_text = redact_pii(request.content, pii_entities)
+
     return AnalyzeContentResponse(
         blocked=blocked,
         block_reason=block_reason,
@@ -155,12 +203,13 @@ async def analyze_content(request: AnalyzeContentRequest):
         risk_level=risk_level,
         matched_phrase=matched_phrase,
         matched_phrase_similarity=matched_phrase_similarity,
-        pii_found=[],
-        redacted_text=request.content,
+        pii_found=pii_entities,
+        redacted_text=safe_text,
         forwarded_response="",
         escalated=False,
         escalation_reason=None,
-        source=request.source
+        source=request.source,
+        session_token=session_token
     )
 
 @app.post("/check-tool-call", response_model=CheckToolCallResponse)
@@ -199,49 +248,37 @@ async def check_tool_call(request: CheckToolCallRequest):
 
 @app.post("/vault/mask", response_model=VaultMaskResponse)
 async def vault_mask(request: VaultMaskRequest):
-    text = request.text
-    session_id = request.session_id
-    
-    pii_entities = detect_pii(text)
-    
-    priority = {"AADHAAR": 10, "PAN": 10, "PHONE_IN": 10, "PIN_CODE": 10}
-    sorted_entities = sorted(
-        pii_entities, 
-        key=lambda x: (x.start, x.end - x.start, priority.get(x.type, 0)), 
-        reverse=True
+    pii_entities = detect_pii(request.text)
+    masked_text, tokens = mask_with_vault(request.text, request.session_id, pii_entities)
+    return VaultMaskResponse(
+        masked_text=masked_text,
+        tokens=tokens,
+        session_token=vault.session_token(request.session_id),
     )
-    
-    masked_text = text
-    last_start = len(text) + 1
-    
-    tokens = []
-    
-    for entity in sorted_entities:
-        if entity.end > last_start:
-            continue
-            
-        vault_counts[session_id][entity.type] += 1
-        count = vault_counts[session_id][entity.type]
-        placeholder = f"<{entity.type}_{count}>"
-        
-        vault_store[session_id][placeholder] = entity.value
-        tokens.append(VaultToken(placeholder=placeholder, type=entity.type))
-        
-        masked_text = masked_text[:entity.start] + placeholder + masked_text[entity.end:]
-        last_start = entity.start
-        
-    return VaultMaskResponse(masked_text=masked_text, tokens=tokens)
 
 @app.post("/vault/resolve", response_model=VaultResolveResponse)
-async def vault_resolve(request: VaultResolveRequest):
-    session_id = request.session_id
-    text = request.masked_text
-    
-    if session_id in vault_store:
-        mapping = vault_store[session_id]
-        for placeholder, real_value in mapping.items():
-            text = text.replace(placeholder, real_value)
-            
+async def vault_resolve(
+    request: VaultResolveRequest,
+    x_vault_token: Optional[str] = Header(default=None),
+):
+    """
+    Restores vaulted PII for the session that owns it.
+
+    This endpoint hands back plaintext Aadhaar/PAN/UPI values, so a session_id
+    is treated as an identifier, never as a credential. The caller must present
+    the bearer secret issued when the session was created (returned as
+    `session_token` by /vault/mask and /analyze-content).
+
+    Unknown session and wrong token both return the same 401, so the response
+    cannot be used to enumerate live session ids.
+    """
+    if not vault.verify(request.session_id, x_vault_token):
+        raise HTTPException(
+            status_code=401,
+            detail="Missing or invalid X-Vault-Token for this session.",
+        )
+
+    text = vault.resolve_text(request.session_id, request.masked_text)
     return VaultResolveResponse(text=text)
 
 @app.post("/explain-verdict", response_model=ExplainVerdictResponse)

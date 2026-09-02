@@ -43,9 +43,15 @@ class DeepReviewResponse(BaseModel):
 class AnalyzeContentRequest(BaseModel):
     content: str
     source: Literal["webpage", "document", "tool_output"]
+    # When supplied, PII found in the retrieved content is masked with
+    # reversible vault tokens (<TYPE_n>) bound to this session instead of
+    # being irreversibly redacted.
+    session_id: Optional[str] = None
 
 class AnalyzeContentResponse(AnalyzeResponse):
     source: str
+    # Set only when the request supplied a session_id and PII was vaulted.
+    session_token: Optional[str] = None
 
 class CheckToolCallRequest(BaseModel):
     tool_name: str
@@ -68,6 +74,9 @@ class VaultToken(BaseModel):
 class VaultMaskResponse(BaseModel):
     masked_text: str
     tokens: List[VaultToken]
+    # Bearer secret proving ownership of this session. Must be presented as the
+    # X-Vault-Token header to /vault/resolve; a session_id alone is not enough.
+    session_token: Optional[str] = None
 
 class VaultResolveRequest(BaseModel):
     session_id: str

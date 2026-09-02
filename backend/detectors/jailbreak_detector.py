@@ -203,6 +203,62 @@ def check_legit_heuristic(text: str) -> bool:
             return True
     return False
 
+# Ordinary Indian customer-support subject matter. Mentioning a phone number,
+# a UPI handle or a PAN card is not an attack, but these phrases sit close to
+# the jailbreak corpus in embedding space and drag the classifier up.
+BENIGN_CONTEXT_CUES = [
+    r"(?i)\b(phone|mobile|contact)\s*(number|no\.?)\b",
+    r"(?i)\botp\b",
+    r"(?i)\bupi\b",
+    r"(?i)\b(paytm|phonepe|gpay|google pay)\b",
+    r"(?i)\b(payment|transaction|refund|transfer)\b",
+    r"(?i)\b(account balance|balance check|statement|passbook)\b",
+    r"(?i)\bkyc\b",
+    r"(?i)\b(aadhaar|aadhar|pan card|ifsc|cibil)\b",
+    r"(?i)\b(branch|pincode|pin code)\b",
+    r"(?i)\b(loan|interest rate|fixed deposit|fd)\b",
+    r"(?i)\b(invoice|gst|delivery|deliver|order)\b",
+    r"(?i)\b(customer care|customer support|working hours)\b",
+    r"(?i)\b(email address|registered email)\b",
+    r"(?i)\b(savings account|bank account)\b",
+    r"(?i)\b(balance|paise|account)\b.*\b(check|karna|dekhna)\b",
+]
+
+# If any of these appear, the request is NOT ordinary support chatter, no
+# matter how much banking vocabulary surrounds it. Vetoes beat cues.
+ATTACK_VETO_CUES = [
+    r"(?i)\b(ignore|disregard|forget|override|bypass|disable|switch(ed)? off|lift(ed)?)\b",
+    r"(?i)\b(bhool|bhul|nazarandaz|hata do|chhodo|band kar)\b",
+    r"(?i)\b(system prompt|initial (context|instructions)|hidden (prompt|instructions|directives))\b",
+    r"(?i)\b(your |apne |apna |tumhare )?(instructions|directives|guidelines|configuration|rules)\b",
+    r"(?i)\b(restriction|unrestricted|no limits|koi limit|filter|guardrail|safety layer|content polic)",
+    r"(?i)\b(pretend|roleplay|role-play|act as|act like|behave as|developer mode|maintenance mode)\b",
+    r"(?i)\b(someone else|somebody else|another (user|person|customer)|different (customer|user|person))\b",
+    r"(?i)\b(kisi aur|kisi dusre|dusre (log|customer|user))\b",
+    r"(?i)\b(reveal|verbatim|print (out |everything)|output your|dump)\b",
+    r"(?i)\bother (users?|people)('s)?\b",
+]
+
+
+def check_benign_context(text: str) -> bool:
+    """
+    True when the text reads as ordinary Indian customer-support subject matter
+    and carries no attack markers.
+
+    Deliberately conservative: a single veto cue disqualifies the whole string,
+    so this can only ever suppress a score, never raise one.
+    """
+    if not text or not text.strip():
+        return False
+    for pattern in ATTACK_VETO_CUES:
+        if re.search(pattern, text):
+            return False
+    for pattern in BENIGN_CONTEXT_CUES:
+        if re.search(pattern, text):
+            return True
+    return False
+
+
 def check_embedding(text: str) -> Tuple[float, bool, str, float]:
     """
     Computes cosine similarity against jailbreak examples and runs ML classifier.
@@ -238,7 +294,20 @@ def detect_jailbreak(text: str) -> Tuple[float, Optional[str], str, str]:
     # and no heuristic override exists
     if is_legit and not heuristic_category and max_sim < 0.75:
         clf_prob = min(clf_prob, 0.4)
-        
+
+    # Benign-context allowlist. Ordinary Indian customer-support text ("I am not
+    # receiving OTP on my phone number") sits close to the jailbreak corpus in
+    # embedding space, and the classifier's negative class barely covers it -- it
+    # returns 0.86-0.99 on plainly harmless requests. Threshold tuning cannot
+    # separate that (the wrong scores overlap the right ones), so when the text
+    # carries a benign cue, no attack marker, no heuristic hit and no strong
+    # embedding match, both learned signals are damped below the medium band.
+    # Guarded so it can only ever lower a score, never raise one.
+    benign_context = check_benign_context(text)
+    if benign_context and not heuristic_category and max_sim < 0.75:
+        clf_prob = min(clf_prob, 0.4)
+        max_sim = min(max_sim, 0.4)
+
     clf_flagged = clf_prob >= 0.75
     
     score = 0.0
