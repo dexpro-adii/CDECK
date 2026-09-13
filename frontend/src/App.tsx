@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Send, ShieldAlert, ShieldCheck, ShieldBan, Shield, Server, Wrench, Globe } from 'lucide-react';
+import { Send, ShieldAlert, ShieldCheck, ShieldBan, Shield, Server, Wrench, Globe, Sparkles } from 'lucide-react';
 import SplashSequence from './SplashSequence';
 import ThreeBackground from './ThreeBackground';
 import ShieldOrb from './ShieldOrb';
@@ -32,6 +32,9 @@ type AnalyzeResponse = {
   escalated?: boolean;
   escalation_reason?: string;
   needs_deep_review?: boolean;
+  output_flagged?: boolean;
+  output_pii_found?: PIIEntity[];
+  output_redacted_response?: string | null;
 };
 
 type Message = {
@@ -67,7 +70,7 @@ export default function App() {
   const [indirectMessage, setIndirectMessage] = useState<Message | null>(null);
 
   const [toolName, setToolName] = useState("send_email");
-  const [toolArgs, setToolArgs] = useState("Send this Aadhaar number: 1234 5678 9012");
+  const [toolArgs, setToolArgs] = useState("Send this Aadhaar number: 3675 9834 6016");
   const [toolCallResponse, setToolCallResponse] = useState<CheckToolCallResponse | null>(null);
   const [isCheckingTool, setIsCheckingTool] = useState(false);
   const [toolCallError, setToolCallError] = useState("");
@@ -604,6 +607,8 @@ function VerdictCard({ message, isLatest }: { message: Message, isLatest: boolea
   const isBlocked = response.blocked;
   const riskLevel = response.risk_level;
   const hasPII = response.pii_found && response.pii_found.length > 0;
+  const isGeminiEscalated = isBlocked && response.block_reason === "escalated_by_deep_review";
+  const hasOutputPII = Boolean(response.output_pii_found && response.output_pii_found.length > 0);
 
   // Determine styling based on state
   let cardClass = "";
@@ -615,17 +620,22 @@ function VerdictCard({ message, isLatest }: { message: Message, isLatest: boolea
     "embedding_similarity": "Semantic Jailbreak Attempt",
     "role_play": "Roleplay Attack",
     "jailbreak_detected": "Jailbreak Detected",
+    "escalated_by_deep_review": "Escalated by Gemini AI Deep Review",
+    "output_rail_blocked": "Output Rail Blocked",
     "pii_detected": "PII Detected"
   };
 
-  if (isBlocked) {
+  if (isGeminiEscalated) {
+    cardClass = "border-purple-500/40 bg-gradient-to-br from-purple-950/40 via-neutral-900/80 to-rose-950/20 shadow-[0_0_30px_rgba(168,85,247,0.12)]";
+    icon = <Sparkles className="w-5 h-5 text-purple-400" />;
+    title = "Blocked — Escalated by Gemini AI Deep Review";
+  } else if (isBlocked) {
     cardClass = "border-rose-500/30 bg-gradient-to-br from-rose-950/40 to-neutral-900/80 shadow-[0_0_30px_rgba(225,29,72,0.05)]";
     icon = <ShieldBan className="w-5 h-5 text-rose-500" />;
     
     // Format human readable reason
     const reasonText = response.block_reason ? (readableReasons[response.block_reason] || response.block_reason) : "High Risk";
     title = `Blocked — ${reasonText}`;
-    
   } else if (riskLevel === "medium") {
     cardClass = "border-amber-500/30 bg-gradient-to-br from-amber-950/40 to-neutral-900/80 shadow-[0_0_30px_rgba(245,158,11,0.05)]";
     icon = <ShieldAlert className="w-5 h-5 text-amber-500" />;
@@ -663,13 +673,13 @@ function VerdictCard({ message, isLatest }: { message: Message, isLatest: boolea
       <div className="flex items-center gap-3 mb-4">
         <div className={cn(
           "p-2 rounded-lg bg-neutral-950/50 shadow-inner",
-          isBlocked ? "border border-rose-500/20" : riskLevel === "medium" ? "border border-amber-500/20" : "border border-emerald-500/20"
+          isGeminiEscalated ? "border border-purple-500/30" : isBlocked ? "border border-rose-500/20" : riskLevel === "medium" ? "border border-amber-500/20" : "border border-emerald-500/20"
         )}>
           {icon}
         </div>
         <h3 className={cn(
           "font-semibold text-sm tracking-wide",
-          isBlocked ? "text-rose-400" : riskLevel === "medium" ? "text-amber-400" : "text-emerald-400"
+          isGeminiEscalated ? "text-purple-300" : isBlocked ? "text-rose-400" : riskLevel === "medium" ? "text-amber-400" : "text-emerald-400"
         )}>
           {title}
         </h3>
@@ -678,6 +688,24 @@ function VerdictCard({ message, isLatest }: { message: Message, isLatest: boolea
       <div className="space-y-4">
         {/* Detail Badges */}
         <div className="flex flex-wrap gap-2">
+          {isGeminiEscalated && (
+            <div className="px-2.5 py-1 rounded bg-purple-950/80 border border-purple-500/50 text-[11px] font-bold text-purple-300 flex items-center gap-1.5 shadow-[0_0_12px_rgba(168,85,247,0.2)]">
+              <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+              <span>Gemini AI Escalation</span>
+            </div>
+          )}
+          {isBlocked && !isGeminiEscalated && (
+            <div className="px-2.5 py-1 rounded bg-rose-950/80 border border-rose-500/40 text-[11px] font-bold text-rose-300 flex items-center gap-1.5">
+              <ShieldBan className="w-3.5 h-3.5 text-rose-400" />
+              <span>Local Pipeline Block</span>
+            </div>
+          )}
+          {response.output_flagged && (
+            <div className="px-2.5 py-1 rounded bg-indigo-950/80 border border-indigo-500/40 text-[11px] font-bold text-indigo-300 flex items-center gap-1.5">
+              <span>🛡️</span>
+              <span>Output Rail Filtered</span>
+            </div>
+          )}
           {response.escalated && (
             <div className="px-2.5 py-1 rounded bg-orange-950/80 border border-orange-500/50 text-[11px] font-bold text-orange-400 flex items-center gap-1.5 shadow-[0_0_10px_rgba(249,115,22,0.1)]">
               <span>⚠️</span>
@@ -710,7 +738,12 @@ function VerdictCard({ message, isLatest }: { message: Message, isLatest: boolea
           
           {hasPII && (
             <div className="px-2.5 py-1 rounded bg-neutral-950/80 border border-neutral-800 text-[11px] font-medium text-neutral-400">
-              <span className="text-blue-400 font-bold">{response.pii_found.length}</span> PII items redacted
+              <span className="text-blue-400 font-bold">{response.pii_found.length}</span> Input PII redacted
+            </div>
+          )}
+          {hasOutputPII && (
+            <div className="px-2.5 py-1 rounded bg-neutral-950/80 border border-neutral-800 text-[11px] font-medium text-neutral-400">
+              <span className="text-indigo-400 font-bold">{response.output_pii_found?.length}</span> Output PII redacted
             </div>
           )}
         </div>
