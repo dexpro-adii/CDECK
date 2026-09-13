@@ -48,6 +48,14 @@ PromptKavach is a comprehensive, AI-driven security middleware designed to prote
    ```bash
    python -m spacy download en_core_web_lg
    ```
+
+## Environment variables
+Create backend/.env with a Google Gemini API key (required for hybrid deep-review escalation):
+```bash
+GOOGLE_API_KEY=your_key_here
+```
+Get a key at https://aistudio.google.com/apikey. Without this, the app still runs, but medium-risk/code-mixed prompts will not get escalated by Gemini review — they'll fall back to the local pipeline's own verdict.
+
 5. Run the backend server:
    ```bash
    python -m uvicorn main:app --reload
