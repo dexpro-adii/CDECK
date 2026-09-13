@@ -44,10 +44,22 @@ PromptKavach is a comprehensive, AI-driven security middleware designed to prote
    ```bash
    pip install -r requirements.txt
    ```
-4. Run the backend server:
+4. Download the required spaCy model for Presidio PII analysis:
+   ```bash
+   python -m spacy download en_core_web_lg
+   ```
+5. Run the backend server:
    ```bash
    python -m uvicorn main:app --reload
    ```
+
+## Optional: GPU acceleration
+By default, `pip install -r requirements.txt` installs CPU-only PyTorch.
+If you have an NVIDIA GPU, install the CUDA build afterward:
+```bash
+pip install torch --index-url https://download.pytorch.org/whl/cu124 --force-reinstall
+```
+Verify with: python -c "import torch; print(torch.cuda.is_available())"
 
 ### Frontend Setup
 1. Navigate to the frontend directory:
