@@ -1,4 +1,5 @@
 venv/
+backend/fresh_venv/
 node_modules/
 __pycache__/
 *.pyc
@@ -6,3 +7,4 @@ __pycache__/
 backend/.env
 
 backend/detectors/data/jailbreak_prompts_2023_12_25.csv
+backend/models/jailbreakdb_cache.npz

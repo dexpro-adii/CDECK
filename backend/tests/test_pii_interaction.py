@@ -149,7 +149,6 @@ class TestClassifierFalsePositive:
     """
     TEXT = "Hi, please call me on +91 9876543210 when you are free."
 
-    @pytest.mark.xfail(reason="Known classifier false positive yielding 'medium' risk (score ~0.746)")
     def test_known_false_positive_risk_level(self):
         score, _, method, risk, _, _ = detect_jailbreak(self.TEXT)
         print(f"\nKNOWN FALSE POSITIVE:")
