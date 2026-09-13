@@ -14,3 +14,9 @@ google-genai==2.23.0
 pandas==3.0.5
 datasets==5.0.1
 httpx==0.28.1
+# vault.py encrypts stored PII with Fernet
+cryptography
+
+# Presidio's PERSON recogniser needs a spaCy model, which pip cannot pull in
+# from requirements.txt:
+#   python -m spacy download en_core_web_lg

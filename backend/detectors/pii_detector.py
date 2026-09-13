@@ -185,16 +185,108 @@ analyzer.registry.add_recognizer(upi_recognizer)
 analyzer.registry.add_recognizer(ifsc_recognizer)
 
 
-# Common Hindi/Hinglish function words, verbs, and particles often misclassified as PERSON by English NER
-HINGLISH_FUNCTION_WORDS = {
-    "kar", "karo", "kare", "karein", "karna", "karke", "ke", "ka", "ki", "ko", "se", "me", "mein",
-    "par", "hai", "hain", "ho", "tha", "thi", "the", "bhi", "aur", "ya", "toh", "to",
-    "mat", "na", "nahi", "nahin", "bss", "bas", "kuch", "sab", "yeh", "woh", "ye", "wo",
-    "apne", "apna", "apni", "mera", "meri", "mere", "tera", "teri", "tere", "uska", "uski",
-    "unka", "unki", "kya", "kyu", "kyun", "kaise", "kab", "kaha", "kahan", "bol", "bolo",
-    "bolu", "batao", "dekh", "dekho", "chal", "chalo", "jaa", "jao", "bhul", "bhool",
-    "likh", "likho", "bhej", "bhejo", "lelo", "dedo", "de"
+# ---------------------------------------------------------------------------
+# Hinglish PERSON false positives
+#
+# The Presidio PERSON recogniser runs an English spaCy model. Romanised Hindi
+# tokens are out of vocabulary and get tagged PROPN, so "Bhai mera phone number
+# update karna hai" comes back with PERSON spans "Bhai mera" and "karna hai".
+# Every Hinglish sentence we tried produced at least one spurious name.
+#
+# A full multilingual retrain is the real fix; this is the cheap, low-risk one:
+# strip known Hinglish function words from the edges of each PERSON span and
+# drop the span if nothing name-like survives. It can only ever remove or
+# shrink a PERSON hit, never invent one, and it leaves the regex-based Indian
+# identifier recognisers (Aadhaar/PAN/UPI/IFSC/phone/PIN) untouched.
+# ---------------------------------------------------------------------------
+HINGLISH_STOPWORDS = {
+    # pronouns / possessives
+    "main", "mai", "mera", "meri", "mere", "hum", "hamara", "hamari",
+    "tu", "tum", "tera", "teri", "tere", "aap", "aapka", "aapki", "aapke",
+    "tumhara", "tumhari", "tumhare", "apna", "apni", "apne", "khud",
+    "yeh", "ye", "woh", "wo", "iska", "uska", "uski", "inka", "unka", "unki", "is", "us",
+    # question words
+    "kya", "kyu", "kyun", "kaise", "kaisa", "kaisi", "kaun", "kab", "kaha", "kahan",
+    "kitna", "kitne", "kitni", "konsa", "kaunsa",
+    # verbs / auxiliaries
+    "hai", "hain", "ho", "hoga", "hogi", "honge", "hota", "hoti", "hote",
+    "tha", "thi", "the", "raha", "rahi", "rahe", "gaya", "gayi", "gaye",
+    "kar", "karo", "kare", "karein", "karna", "karke", "karne", "karta", "karti", "karte", "kiya",
+    "karunga", "karta hoon", "hoon", "hu", "hun",
+    "sakta", "sakti", "sakte", "chahiye", "chahta", "chahti", "chahte",
+    "batao", "bata", "bolo", "bolu", "bol", "dekho", "dekh", "samjha", "samjho",
+    "aaya", "aayega", "aayegi", "jaa", "ja", "jao", "jaana", "lena", "lo", "lelo",
+    "de", "do", "dedo", "dena", "diya", "milega", "mila", "lagta", "lagega",
+    "bhej", "bheja", "bhejo", "bhejna", "nikal", "nikalo", "nikalna",
+    "daal", "daalo", "daalna", "dalna", "laga", "lagao", "lagana",
+    "bhul", "bhool", "likh", "likho",
+    # postpositions / conjunctions / particles
+    "ka", "ki", "ke", "ko", "se", "me", "mein", "par", "pe", "tak", "liye",
+    "lie", "aur", "ya", "nahi", "nahin", "na", "mat", "bhi", "to", "toh",
+    "hi", "sirf", "bas", "bss", "agar", "lekin", "magar", "jab", "tab",
+    "phir", "fir", "abhi", "ab", "baad", "pehle", "kuch", "koi", "sab",
+    "saare", "sara", "sari", "jo", "jis", "wale", "wala", "wali",
+    # interjections / fillers
+    "bhai", "yaar", "arre", "are", "achha", "accha", "acha", "theek", "thik",
+    "thoda", "thodi", "zyada", "jyada", "matlab", "waise", "chal", "chalo",
+    # very common nouns that are not names
+    "naam", "paisa", "paise", "kaam", "baat", "din", "log", "logo",
 }
+
+
+# Domain acronyms spaCy also mistakes for proper nouns.
+NON_NAME_ACRONYMS = {
+    "upi", "kyc", "pan", "ifsc", "otp", "gst", "cibil", "emi", "neft",
+    "imps", "rtgs", "atm", "id", "sms", "api", "pin", "aadhaar", "aadhar",
+}
+
+_TOKEN_RE = re.compile(r"\S+")
+
+
+def _is_droppable_token(token: str) -> bool:
+    bare = token.strip(".,!?;:'\"()[]{}").lower()
+    if not bare:
+        return True
+    if bare in HINGLISH_STOPWORDS:
+        return True
+    if bare in NON_NAME_ACRONYMS:
+        return True
+    return False
+
+
+def _looks_code_mixed(text: str) -> bool:
+    """Two or more distinct Hinglish markers means we treat the text as Hinglish."""
+    seen = {m.group().strip(".,!?;:'\"()[]{}").lower() for m in _TOKEN_RE.finditer(text)}
+    return len(seen & HINGLISH_STOPWORDS) >= 2
+
+
+def _clean_person_span(text: str, start: int, end: int, code_mixed: bool):
+    """
+    Trim Hinglish filler from the edges of a PERSON span.
+
+    Returns (new_start, new_end) or None when nothing name-like is left.
+    """
+    tokens = [(m.start() + start, m.end() + start) for m in _TOKEN_RE.finditer(text[start:end])]
+    if not tokens:
+        return None
+
+    # A span made up entirely of filler is never a name -- drop it regardless
+    # of whether the surrounding sentence looked code-mixed.
+    if all(_is_droppable_token(text[s:e]) for s, e in tokens):
+        return None
+
+    if not code_mixed:
+        return start, end
+
+    lo, hi = 0, len(tokens) - 1
+    while lo <= hi and _is_droppable_token(text[tokens[lo][0]:tokens[lo][1]]):
+        lo += 1
+    while hi >= lo and _is_droppable_token(text[tokens[hi][0]:tokens[hi][1]]):
+        hi -= 1
+    if lo > hi:
+        return None
+    return tokens[lo][0], tokens[hi][1]
+
 
 def detect_pii(text: str) -> List[PIIEntity]:
     """
@@ -210,29 +302,34 @@ def detect_pii(text: str) -> List[PIIEntity]:
         language='en'
     )
     
+    code_mixed = _looks_code_mixed(text)
+
     entities = []
     for result in results:
         # Standardize email type name if needed
         entity_type = result.entity_type
         if entity_type == "EMAIL_ADDRESS":
             entity_type = "EMAIL"
-            
-        val = text[result.start:result.end]
+
+        start, end = result.start, result.end
+
+        # Hinglish filler routinely comes back as a PERSON span; trim it, and
+        # drop the hit entirely when no name-like token survives.
         if entity_type == "PERSON":
-            val_clean = val.strip().lower()
-            words = val_clean.split()
-            if val_clean in HINGLISH_FUNCTION_WORDS or (words and all(w in HINGLISH_FUNCTION_WORDS for w in words)):
+            cleaned = _clean_person_span(text, start, end, code_mixed)
+            if cleaned is None:
                 continue
+            start, end = cleaned
 
         entities.append(
             PIIEntity(
                 type=entity_type,
-                value=val,
-                start=result.start,
-                end=result.end
+                value=text[start:end],
+                start=start,
+                end=end
             )
         )
-        
+
     return entities
 
 def redact_text(text: str, pii_entities: List[PIIEntity]) -> str:

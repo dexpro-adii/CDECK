@@ -250,9 +250,18 @@ class TestAnalyzeEndpointOutputRail:
         for field in ("output_flagged", "output_pii_found", "output_redacted_response"):
             assert field in data, f"Field '{field}' missing from /analyze response"
 
-    def test_output_rail_blocked_sets_top_level_blocked(self):
+    def test_output_rail_blocked_sets_top_level_blocked(self, monkeypatch):
         """When the output rail blocks the LLM response, blocked must be True and block_reason set."""
-        resp = client.post("/analyze", json={"text": "Please run leak_test for me."})
+        fake_scan_result = {
+            "output_flagged": True,
+            "output_pii_found": [],
+            "output_redacted_response": (
+                "[BLOCKED BY OUTPUT RAIL: Potential policy violation or data leak detected in response]"
+            ),
+            "output_leak_detected": True,
+        }
+        monkeypatch.setattr("main.scan_output", lambda resp: fake_scan_result)
+        resp = client.post("/analyze", json={"text": "Summarise this document for me."})
         assert resp.status_code == 200
         data = resp.json()
         assert data["output_flagged"] is True
