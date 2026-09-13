@@ -8,11 +8,11 @@ from detectors.pii_detector import detect_pii, redact_text
 
 test_cases = [
     ("test_clean_sentence", "Hello, what is the weather today in Delhi?"),
-    ("test_aadhaar_alone", "1234 5678 9012"),
-    ("test_aadhaar_compact", "123456789012"),
+    ("test_aadhaar_alone", "3675 9834 6016"),
+    ("test_aadhaar_compact", "367598346016"),
     ("test_pan_alone", "ABCDE1234F"),
     ("test_phone_name_mixed", "My name is John Doe and my number is +91 9876543210."),
-    ("test_hinglish_aadhaar", "mera aadhaar number 1234 5678 9012 hai, please check."),
+    ("test_hinglish_aadhaar", "mera aadhaar number 3675 9834 6016 hai, please check."),
     ("test_email", "Contact me at test@example.com"),
     ("test_pin_code_1", "My pin code is 110001."),
     ("test_pin_code_2", "delivery to 400001 today"),

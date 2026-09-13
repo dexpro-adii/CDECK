@@ -37,7 +37,7 @@ print("output_pii_found         :", json.dumps(data_a["output_pii_found"], inden
 print("output_redacted_response :", repr(data_a["output_redacted_response"]))
 print("forwarded_response       :", repr(data_a["forwarded_response"]))
 assert data_a["output_flagged"] == True, "FAIL: output_flagged should be True"
-assert "9876 5432 1098" not in data_a["forwarded_response"], "FAIL: raw Aadhaar leaked to forwarded_response"
+assert "3675 9834 6016" not in data_a["forwarded_response"], "FAIL: raw Aadhaar leaked to forwarded_response"
 assert "[REDACTED_AADHAAR]" in data_a["output_redacted_response"], "FAIL: REDACTED token missing"
 print("\n✓ PASS: Output rail caught and redacted PII before it reached forwarded_response")
 

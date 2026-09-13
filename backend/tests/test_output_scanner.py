@@ -38,7 +38,7 @@ class TestOutputScannerPII:
 
     RESPONSE_WITH_AADHAAR = (
         "Sure! Based on the records I found, your Aadhaar number is "
-        "1234 5678 9012 and your address is 12 MG Road, Delhi."
+        "3675 9834 6016 and your address is 12 MG Road, Delhi."
     )
 
     def test_flagged(self):
@@ -59,7 +59,7 @@ class TestOutputScannerPII:
     def test_aadhaar_number_redacted(self):
         result = scan_output(self.RESPONSE_WITH_AADHAAR)
         redacted = result["output_redacted_response"]
-        assert "1234 5678 9012" not in redacted, (
+        assert "3675 9834 6016" not in redacted, (
             "Raw Aadhaar digits must not appear in the redacted response"
         )
         assert "[REDACTED_AADHAAR]" in redacted, (
@@ -192,7 +192,7 @@ class TestOutputScannerEdgeCases:
 
     def test_compact_aadhaar(self):
         """Aadhaar without spaces should also be caught."""
-        result = scan_output("Your Aadhaar: 123456789012")
+        result = scan_output("Your Aadhaar: 367598346016")
         assert result["output_flagged"] is True
         assert any(e.type == "AADHAAR" for e in result["output_pii_found"])
 

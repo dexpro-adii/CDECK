@@ -20,7 +20,7 @@ def test_check_tool_call():
         "tool_name": "send_email",
         "arguments": {
             "to": "external@example.com",
-            "body": "Customer Aadhaar: 1234 5678 9012"
+            "body": "Customer Aadhaar: 3675 9834 6016"
         }
     }
     resp1 = client.post("/check-tool-call", json=payload1)
@@ -49,7 +49,7 @@ def test_check_tool_call():
 def test_vault():
     # 1. mask
     session_id = "test-vault-1"
-    text = "My phone is 9876543210 and Aadhaar is 1234 5678 9012"
+    text = "My phone is 9876543210 and Aadhaar is 3675 9834 6016"
     resp_mask = client.post("/vault/mask", json={"text": text, "session_id": session_id})
     assert resp_mask.status_code == 200
     data_mask = resp_mask.json()
@@ -59,7 +59,7 @@ def test_vault():
     
     # ensure raw numbers not in masked text
     assert "9876543210" not in masked_text
-    assert "1234 5678 9012" not in masked_text
+    assert "3675 9834 6016" not in masked_text
     assert "<PHONE_IN_" in masked_text
     assert "<AADHAAR_" in masked_text
     
@@ -73,7 +73,7 @@ def test_vault():
     
     resolved_text = data_resolve["text"]
     assert "9876543210" in resolved_text
-    assert "1234 5678 9012" in resolved_text
+    assert "3675 9834 6016" in resolved_text
     assert "<PHONE_IN_" not in resolved_text
     
     print("test_vault resolve passed!")

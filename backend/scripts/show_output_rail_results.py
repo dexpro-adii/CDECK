@@ -14,7 +14,7 @@ DIVIDER = "\n" + "=" * 72 + "\n"
 # ── Case 1: Aadhaar PII in LLM response ─────────────────────────────────────
 case1 = (
     "Sure! Based on the records I found, your Aadhaar number is "
-    "1234 5678 9012 and your address is 12 MG Road, Delhi."
+    "3675 9834 6016 and your address is 12 MG Road, Delhi."
 )
 print(DIVIDER)
 print("CASE 1 — Mocked LLM response contains a fake Aadhaar number")
@@ -31,7 +31,7 @@ pprint.pprint(printable1, width=80)
 print("\nKey assertions:")
 print("  output_flagged          :", result1["output_flagged"])
 print("  PII types found         :", [e.type for e in result1["output_pii_found"]])
-print("  Aadhaar in redacted?    :", "1234 5678 9012" in result1["output_redacted_response"])
+print("  Aadhaar in redacted?    :", "3675 9834 6016" in result1["output_redacted_response"])
 print("  REDACTED token present? :", "[REDACTED_AADHAAR]" in result1["output_redacted_response"])
 print("  output_redacted_response:", repr(result1["output_redacted_response"]))
 

@@ -7,7 +7,7 @@ client = TestClient(app)
 queries = [
     "Please what are best practices for input validation in an AI assistant?",
     "EXPLAIN LEAST PRIVILEGE FOR AI AGENTS.",
-    "Please my Aadhaar number is 1234 5678 9012."
+    "Please my Aadhaar number is 3675 9834 6016."
 ]
 
 print("--- Testing against ACTUAL /analyze endpoint via FastAPI ---")

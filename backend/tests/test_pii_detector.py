@@ -13,7 +13,7 @@ def test_clean_sentence():
     assert len(results) == 0
 
 def test_aadhaar_alone():
-    text = "1234 5678 9012"
+    text = "3675 9834 6016"
     results = detect_pii(text)
     assert len(results) > 0
     assert any(r.type == "AADHAAR" for r in results)
@@ -22,7 +22,7 @@ def test_aadhaar_alone():
     assert redacted == "[REDACTED_AADHAAR]"
 
 def test_aadhaar_compact():
-    text = "123456789012"
+    text = "367598346016"
     results = detect_pii(text)
     assert any(r.type == "AADHAAR" for r in results)
 
@@ -44,14 +44,14 @@ def test_phone_name_mixed():
     assert "PHONE_IN" in types
 
 def test_hinglish_aadhaar():
-    text = "mera aadhaar number 1234 5678 9012 hai, please check."
+    text = "mera aadhaar number 3675 9834 6016 hai, please check."
     results = detect_pii(text)
     assert len(results) > 0
     assert any(r.type == "AADHAAR" for r in results)
     
     redacted = redact_text(text, results)
     assert "[REDACTED_AADHAAR]" in redacted
-    assert "1234 5678 9012" not in redacted
+    assert "3675 9834 6016" not in redacted
 
 def test_email():
     text = "Contact me at test@example.com"

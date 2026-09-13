@@ -102,7 +102,7 @@ async def analyze_prompt(request: AnalyzeRequest):
     elif "aadhaar_test" in text.lower():
         forwarded_response = (
             "Based on your query, the account holder's Aadhaar is "
-            "9876 5432 1098 and their PAN is ZZZPQ9999R. "
+            "3675 9834 6016 and their PAN is ZZZPQ9999R. "
             "This is a mocked LLM response for: " + redacted_text
         )
     else:

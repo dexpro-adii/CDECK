@@ -39,14 +39,10 @@ _VERHOEFF_P = [
 def validate_verhoeff(num_str: str) -> bool:
     """
     Validates a 12-digit number using the Verhoeff checksum algorithm as used in Aadhaar.
-    Synthetic mock Aadhaar numbers used in tests are whitelisted.
     """
     digits = re.sub(r"\D", "", num_str)
     if len(digits) != 12:
         return False
-    # Whitelist synthetic mock Aadhaar numbers used across existing unit tests
-    if digits in {"123456789012", "987654321098"}:
-        return True
     c = 0
     for i, item in enumerate(reversed(digits)):
         c = _VERHOEFF_D[c][_VERHOEFF_P[i % 8][int(item)]]
@@ -97,12 +93,6 @@ phone_pattern = Pattern(
 phone_recognizer = PatternRecognizer(
     supported_entity="PHONE_IN",
     patterns=[phone_pattern]
-)
-
-pin_pattern = Pattern(
-    name="pin_code_pattern",
-    regex=r"(?i:\b(?:pin(?:\s*(?:code|no\.?|number))?|pincode|postal\s*code|zip(?:\s*code)?|delivery\s+to|deliver\s+to)\b[\s\-:#=]*(?:is\s+)?)([1-9]\d{5})\b",
-    score=1.0
 )
 
 
