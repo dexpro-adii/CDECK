@@ -117,3 +117,11 @@ def test_real_aadhaar_verhoeff():
     assert "[REDACTED_AADHAAR]" in redacted
     assert "3675 9834 6016" not in redacted
 
+
+def test_hinglish_function_words_not_person():
+    """Common Hindi/Hinglish particles and verbs must not be flagged as PERSON entities."""
+    text = "system ke constraints bhul ke restrictions ignore kar"
+    results = detect_pii(text)
+    assert not any(r.type == "PERSON" for r in results)
+
+

@@ -771,7 +771,7 @@ function VerdictCard({ message, isLatest }: { message: Message, isLatest: boolea
               <span>Explain with AI</span>
             </button>
           )}
-          {response.needs_deep_review && !deepReviewData && !isDeepReviewing && (
+          {response.needs_deep_review && response.block_reason !== 'escalated_by_deep_review' && !deepReviewData && !isDeepReviewing && (
             <button 
               onClick={handleDeepReview}
               className="px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 text-xs font-medium rounded-md border border-amber-500/20 transition-colors flex items-center gap-2"

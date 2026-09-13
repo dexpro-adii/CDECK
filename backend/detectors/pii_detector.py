@@ -185,6 +185,17 @@ analyzer.registry.add_recognizer(upi_recognizer)
 analyzer.registry.add_recognizer(ifsc_recognizer)
 
 
+# Common Hindi/Hinglish function words, verbs, and particles often misclassified as PERSON by English NER
+HINGLISH_FUNCTION_WORDS = {
+    "kar", "karo", "kare", "karein", "karna", "karke", "ke", "ka", "ki", "ko", "se", "me", "mein",
+    "par", "hai", "hain", "ho", "tha", "thi", "the", "bhi", "aur", "ya", "toh", "to",
+    "mat", "na", "nahi", "nahin", "bss", "bas", "kuch", "sab", "yeh", "woh", "ye", "wo",
+    "apne", "apna", "apni", "mera", "meri", "mere", "tera", "teri", "tere", "uska", "uski",
+    "unka", "unki", "kya", "kyu", "kyun", "kaise", "kab", "kaha", "kahan", "bol", "bolo",
+    "bolu", "batao", "dekh", "dekho", "chal", "chalo", "jaa", "jao", "bhul", "bhool",
+    "likh", "likho", "bhej", "bhejo", "lelo", "dedo", "de"
+}
+
 def detect_pii(text: str) -> List[PIIEntity]:
     """
     Detects PII entities in the given text using Presidio.
@@ -206,10 +217,17 @@ def detect_pii(text: str) -> List[PIIEntity]:
         if entity_type == "EMAIL_ADDRESS":
             entity_type = "EMAIL"
             
+        val = text[result.start:result.end]
+        if entity_type == "PERSON":
+            val_clean = val.strip().lower()
+            words = val_clean.split()
+            if val_clean in HINGLISH_FUNCTION_WORDS or (words and all(w in HINGLISH_FUNCTION_WORDS for w in words)):
+                continue
+
         entities.append(
             PIIEntity(
                 type=entity_type,
-                value=text[result.start:result.end],
+                value=val,
                 start=result.start,
                 end=result.end
             )
