@@ -27,11 +27,22 @@ from detectors.jailbreak_detector import detect_jailbreak, is_code_mixed, evalua
 from detectors.output_scanner import scan_output
 from vault import SessionVault
 from collections import defaultdict, deque
+import re as _re
+
+# Regex to extract a planted trigger keyword from text like:
+# "Remember the word: PERSIST" / "Trigger keyword: ACTIVATE"
+_TRIGGER_PLANT_RE = _re.compile(
+    r"(?i)(?:remember\s+the\s+(?:word|phrase|keyword|code\s*word)|trigger\s+(?:word|phrase|keyword))[\s:\-]+([A-Z][A-Z0-9_]{2,20})"
+)
 
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "phi3:mini")
 
 # In-memory session tracking: session_id -> deque(maxlen=10) of risk_levels
 session_history = defaultdict(lambda: deque(maxlen=10))
+
+# Cross-turn trigger word memory: session_id -> set of uppercase trigger words
+# e.g. {"default_session": {"PERSIST", "ACTIVATE"}}
+session_trigger_words: dict = defaultdict(set)
 
 app = FastAPI(title="PromptKavach API")
 
@@ -64,7 +75,7 @@ async def startup_event():
             client = AsyncClient()
             await asyncio.wait_for(
                 client.generate(model=OLLAMA_MODEL, prompt='Hello', options={"num_predict": 1}),
-                timeout=60.0
+                timeout=2.0
             )
             print("Ollama model warmed up successfully.")
         except Exception as e:
@@ -138,10 +149,40 @@ async def analyze_prompt(request: AnalyzeRequest):
     # 5. Session-based Behavior Tracking
     history = session_history[session_id]
     history.append(risk_level)
-    
+
     suspicious_count = sum(1 for r in history if r in ["medium", "high"])
     escalated = suspicious_count >= 3
     escalation_reason = "Repeated suspicious activity detected in this session" if escalated else None
+
+    # 6. Cross-turn trigger word tracking
+    # Phase A — planting: did this message register a trigger word?
+    plant_match = _TRIGGER_PLANT_RE.search(text)
+    if plant_match:
+        trigger_word = plant_match.group(1).upper()
+        session_trigger_words[session_id].add(trigger_word)
+        # The planting message itself is already an attack; ensure it is blocked
+        if not blocked:
+            is_jailbreak = True
+            blocked = True
+            block_reason = "cross_turn_trigger_planted"
+            forwarded_response = ""
+            output_flagged = False
+            output_pii_found = []
+            output_redacted_response = ""
+
+    # Phase B — activation: does this message contain a previously planted trigger?
+    if not blocked:
+        for trigger in session_trigger_words[session_id]:
+            if trigger in text.upper():
+                is_jailbreak = True
+                blocked = True
+                block_reason = "cross_turn_trigger_activated"
+                forwarded_response = ""
+                output_flagged = False
+                output_pii_found = []
+                output_redacted_response = ""
+                escalation_reason = f"Cross-turn trigger '{trigger}' activated from earlier session message"
+                break
     
     if is_jailbreak:
         blocked = True
