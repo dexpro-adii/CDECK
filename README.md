@@ -1,4 +1,4 @@
-# PromptKavach 🛡️
+# CDECK 🛡️
 
 PromptKavach is a comprehensive, AI-driven security middleware designed to protect Large Language Model (LLM) applications from vulnerabilities, adversarial attacks, and data leaks. It acts as a robust shield between users and your core AI systems, ensuring safe, compliant, and reliable interactions.
 
