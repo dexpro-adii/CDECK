@@ -154,7 +154,7 @@ export default function SplashSequence({ onComplete }: SplashSequenceProps) {
         {/* Layer 1: The actual logo image, progressively revealed by the diagonal mask wipe */}
         <img
           src={logoImg}
-          alt="PromptKavach Logo"
+          alt="CDECK Logo"
           draggable={false}
           className={`absolute inset-0 w-full h-full object-contain splash-logo-reveal ${phase === 'wipe' ? 'wiping' : ''}`}
           style={{

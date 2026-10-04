@@ -1,0 +1,17 @@
+{
+  "description": "Regression thresholds with tolerance buffer across group-aware evaluation splits",
+  "timestamp": "2026-10-04T10:45:00.000000+00:00",
+  "git_commit": "91a891ecc84452384e5406f658f141c3edf77df3",
+  "min_recall_high": 61.5,
+  "min_recall_flagged": 72.0,
+  "max_fpr_high": 3.5,
+  "max_fpr_flagged": 14.0,
+  "max_paraphrase_bypass_rate": 35.0,
+  "current_measured": {
+    "recall_high": 63.83,
+    "recall_flagged": 74.47,
+    "fpr_high": 2.80,
+    "fpr_flagged": 12.15,
+    "paraphrase_bypass_rate": 18.52
+  }
+}

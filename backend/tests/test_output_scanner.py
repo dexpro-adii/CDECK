@@ -259,8 +259,19 @@ class TestAnalyzeEndpointOutputRail:
                 "[BLOCKED BY OUTPUT RAIL: Potential policy violation or data leak detected in response]"
             ),
             "output_leak_detected": True,
+            "secrets_detected": [],
+            "canary_leaked": False,
+            "compliance_escalated": False,
         }
-        monkeypatch.setattr("main.scan_output", lambda resp: fake_scan_result)
+        # Mock jailbreak detector so the output rail branch is always reached
+        _safe_tuple = (0.01, "none", "none", "low", None, None)
+        class _SafeJB(tuple):
+            heuristic_category = None; heuristic_score = 0.0
+            winning_transformation = None; decoded_text = None; layer_details = {}
+            risk_level = "low"
+        safe_jb = _SafeJB(_safe_tuple)
+        monkeypatch.setattr("main.detect_jailbreak", lambda *a, **kw: safe_jb)
+        monkeypatch.setattr("main.scan_output", lambda *a, **kw: fake_scan_result)
         resp = client.post("/analyze", json={"text": "Summarise this document for me."})
         assert resp.status_code == 200
         data = resp.json()
@@ -313,8 +324,19 @@ class TestAnalyzeEndpointOutputRail:
             "output_pii_found": [PIIEntity(type="AADHAAR", value="3675 9834 6016", start=46, end=60)],
             "output_redacted_response": "The account holder's Aadhaar is [REDACTED_AADHAAR].",
             "output_leak_detected": False,
+            "secrets_detected": [],
+            "canary_leaked": False,
+            "compliance_escalated": False,
         }
-        monkeypatch.setattr("main.scan_output", lambda resp: fake_scan_result)
+        # Force jailbreak detector to return low risk so scan_output is always called
+        _safe_tuple = (0.01, "none", "none", "low", None, None)
+        class _SafeJB(tuple):
+            heuristic_category = None; heuristic_score = 0.0
+            winning_transformation = None; decoded_text = None; layer_details = {}
+            risk_level = "low"
+        safe_jb = _SafeJB(_safe_tuple)
+        monkeypatch.setattr("main.detect_jailbreak", lambda *a, **kw: safe_jb)
+        monkeypatch.setattr("main.scan_output", lambda *a, **kw: fake_scan_result)
         resp = client.post("/analyze", json={"text": "Look up account details."})
         assert resp.status_code == 200
         data = resp.json()

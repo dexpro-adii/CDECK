@@ -1,0 +1,13 @@
+{
+  "block_threshold": 0.78,
+  "warn_threshold": 0.55,
+  "calibrated_fpr_block": 1.6129032258064515,
+  "calibrated_recall_block": 71.0691823899371,
+  "calibrated_fpr_warn": 7.526881720430108,
+  "calibrated_recall_warn": 81.76100628930818,
+  "cv_roc_auc": 0.9532,
+  "target_fpr_block_max": 2.0,
+  "target_fpr_warn_max": 8.0,
+  "model_version": "paraphrase-multilingual-MiniLM-L12-v2",
+  "timestamp": "2026-10-04"
+}

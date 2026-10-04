@@ -1,0 +1,21 @@
+{
+  "n_samples": 500,
+  "prompts_tested": 10,
+  "runs_per_prompt": 50,
+  "phase1_pipeline": {
+    "p50_ms": 33.55,
+    "p90_ms": 43.08,
+    "p95_ms": 47.77,
+    "p99_ms": 54.66,
+    "mean_ms": 33.33,
+    "std_ms": 7.55
+  },
+  "current_pipeline": {
+    "p50_ms": 39.43,
+    "p90_ms": 85.47,
+    "p95_ms": 102.43,
+    "p99_ms": 112.12,
+    "mean_ms": 45.37,
+    "std_ms": 27.31
+  }
+}

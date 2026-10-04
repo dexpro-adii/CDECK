@@ -1,5 +1,11 @@
+import os
+import sys
 import pytest
 from unittest.mock import patch
+
+# Add backend to path to allow tests to run
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from fastapi.testclient import TestClient
 from main import app
 from detectors.jailbreak_detector import detect_jailbreak

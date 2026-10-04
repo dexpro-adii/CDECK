@@ -25,6 +25,7 @@ from tool_security import TOOL_RISK_MAP
 from detectors.pii_detector import detect_pii, redact_pii
 from detectors.jailbreak_detector import detect_jailbreak, is_code_mixed, evaluate_with_gemini_async
 from detectors.output_scanner import scan_output
+from detectors.session_tracker import session_tracker
 from vault import SessionVault
 from collections import defaultdict, deque
 import re as _re
@@ -44,7 +45,7 @@ session_history = defaultdict(lambda: deque(maxlen=10))
 # e.g. {"default_session": {"PERSIST", "ACTIVATE"}}
 session_trigger_words: dict = defaultdict(set)
 
-app = FastAPI(title="PromptKavach API")
+app = FastAPI(title="CDECK API")
 
 # Configure CORS with explicit origins for local dev
 ALLOWED_ORIGINS = [
@@ -125,7 +126,13 @@ async def analyze_prompt(request: AnalyzeRequest):
     session_id = request.session_id or "default_session"
     
     # 1. Jailbreak Detection
-    jailbreak_score, jb_category, jb_method, risk_level, matched_phrase, matched_phrase_similarity = detect_jailbreak(text)
+    jb_res = detect_jailbreak(text)
+    jailbreak_score, jb_category, jb_method, risk_level, matched_phrase, matched_phrase_similarity = jb_res[:6]
+    heuristic_category = getattr(jb_res, "heuristic_category", None)
+    heuristic_score = getattr(jb_res, "heuristic_score", None)
+    winning_transformation = getattr(jb_res, "winning_transformation", None)
+    decoded_text = getattr(jb_res, "decoded_text", None)
+    layer_details = getattr(jb_res, "layer_details", None)
     
     needs_deep_review = is_code_mixed(text)
     
@@ -151,8 +158,33 @@ async def analyze_prompt(request: AnalyzeRequest):
     history.append(risk_level)
 
     suspicious_count = sum(1 for r in history if r in ["medium", "high"])
-    escalated = suspicious_count >= 3
-    escalation_reason = "Repeated suspicious activity detected in this session" if escalated else None
+    escalated_by_count = suspicious_count >= 3
+
+    # Advanced Multi-Turn Risk Tracker
+    session_verdict = session_tracker.record_and_assess_turn(
+        session_id=session_id,
+        text=text,
+        single_turn_score=jailbreak_score,
+        single_turn_risk=risk_level,
+        layer_details=layer_details,
+        single_turn_blocked=is_jailbreak
+    )
+
+    escalated = escalated_by_count or session_verdict.escalated_by_session
+    if session_verdict.escalated_by_session:
+        escalation_reason = session_verdict.escalation_reason
+        is_jailbreak = True
+        risk_level = "high"
+        if not block_reason:
+            block_reason = f"session_risk_escalated: {session_verdict.escalation_reason}"
+    elif escalated_by_count:
+        escalation_reason = "Repeated suspicious activity detected in this session"
+        is_jailbreak = True
+        risk_level = "high"
+        if not block_reason:
+            block_reason = "session_risk_escalated"
+    else:
+        escalation_reason = None
 
     # 6. Cross-turn trigger word tracking
     # Phase A — planting: did this message register a trigger word?
@@ -186,10 +218,11 @@ async def analyze_prompt(request: AnalyzeRequest):
     
     if is_jailbreak:
         blocked = True
-        if jb_category == "escalated_by_deep_review" or jb_method == "gemini_deep_review":
-            block_reason = "escalated_by_deep_review"
-        else:
-            block_reason = "jailbreak_detected"
+        if not block_reason:
+            if jb_category == "escalated_by_deep_review" or jb_method == "gemini_deep_review":
+                block_reason = "escalated_by_deep_review"
+            else:
+                block_reason = "jailbreak_detected"
         forwarded_response = ""
         output_flagged = False
         output_pii_found = []
@@ -212,6 +245,11 @@ async def analyze_prompt(request: AnalyzeRequest):
         risk_level=risk_level,
         matched_phrase=matched_phrase,
         matched_phrase_similarity=matched_phrase_similarity,
+        heuristic_category=heuristic_category,
+        heuristic_score=heuristic_score,
+        transformation=winning_transformation,
+        decoded_text=decoded_text,
+        layer_details=layer_details,
         pii_found=pii_entities,
         redacted_text=redacted_text,
         forwarded_response=output_redacted_response if not blocked else "",
@@ -220,7 +258,8 @@ async def analyze_prompt(request: AnalyzeRequest):
         needs_deep_review=needs_deep_review,
         output_flagged=output_flagged,
         output_pii_found=output_pii_found,
-        output_redacted_response=output_redacted_response
+        output_redacted_response=output_redacted_response,
+        session_risk=session_verdict.to_dict()
     )
 
 @app.post("/deep-review", response_model=DeepReviewResponse)
@@ -235,7 +274,10 @@ async def deep_review(request: DeepReviewRequest):
 
 @app.post("/analyze-content", response_model=AnalyzeContentResponse)
 async def analyze_content(request: AnalyzeContentRequest):
-    jailbreak_score, jb_category, jb_method, risk_level, matched_phrase, matched_phrase_similarity = detect_jailbreak(request.content)
+    jb_res = detect_jailbreak(request.content)
+    jailbreak_score, jb_category, jb_method, risk_level, matched_phrase, matched_phrase_similarity = jb_res[:6]
+    heuristic_category = getattr(jb_res, "heuristic_category", None)
+    heuristic_score = getattr(jb_res, "heuristic_score", None)
     is_jailbreak = risk_level == "high"
 
     blocked = False
@@ -263,6 +305,9 @@ async def analyze_content(request: AnalyzeContentRequest):
         risk_level=risk_level,
         matched_phrase=matched_phrase,
         matched_phrase_similarity=matched_phrase_similarity,
+        heuristic_category=heuristic_category,
+        heuristic_score=heuristic_score,
+        layer_details=getattr(jb_res, "layer_details", None),
         pii_found=pii_entities,
         redacted_text=safe_text,
         forwarded_response="",
@@ -373,3 +418,14 @@ Why was this verdict reached based on these details? Explain it to a user in 1-2
     except Exception as e:
         # Fallback on timeout or Ollama not running
         return ExplainVerdictResponse(explanation=fallback_explanation)
+
+@app.get("/session/{session_id}/timeline")
+async def get_session_timeline(session_id: str):
+    return {"session_id": session_id, "timeline": session_tracker.get_session_timeline(session_id)}
+
+@app.post("/session/{session_id}/reset")
+async def reset_session(session_id: str):
+    session_tracker.reset_session(session_id)
+    session_history.pop(session_id, None)
+    session_trigger_words.pop(session_id, None)
+    return {"status": "ok", "message": f"Session {session_id} reset successfully"}

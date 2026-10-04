@@ -4,7 +4,7 @@ with open('frontend/src/App.tsx', 'r', encoding='utf-8') as f:
 checks = [
     ('import SplashSequence', 'SplashSequence import'),
     ('ThreeBackground', 'ThreeBackground'),
-    ('Kavach Live Verdict', 'Verdict panel title'),
+    ('CDECK Live Verdict', 'Verdict panel title'),
     ('min-h-screen bg-neutral-950', 'Main div class'),
     ('activeTab === "chat"', 'Tab conditional'),
 ]

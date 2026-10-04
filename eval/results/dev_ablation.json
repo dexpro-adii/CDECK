@@ -1,0 +1,47 @@
+[
+  {
+    "config": "Full Pipeline (Step 2.4)",
+    "recall_high": 71.07,
+    "recall_flagged": 81.76,
+    "fpr_high": 1.08,
+    "fpr_flagged": 6.45,
+    "deva_recall_high": 67.24,
+    "obf_recall_high": 89.13
+  },
+  {
+    "config": "w/o Normalizer (Raw text)",
+    "recall_high": 58.49,
+    "recall_flagged": 69.81,
+    "fpr_high": 1.08,
+    "fpr_flagged": 5.91,
+    "deva_recall_high": 67.24,
+    "obf_recall_high": 45.65
+  },
+  {
+    "config": "w/o Devanagari Regexes",
+    "recall_high": 67.3,
+    "recall_flagged": 78.62,
+    "fpr_high": 1.08,
+    "fpr_flagged": 6.45,
+    "deva_recall_high": 56.9,
+    "obf_recall_high": 89.13
+  },
+  {
+    "config": "w/o Base Classifier",
+    "recall_high": 20.13,
+    "recall_flagged": 37.11,
+    "fpr_high": 0.0,
+    "fpr_flagged": 0.0,
+    "deva_recall_high": 13.79,
+    "obf_recall_high": 39.13
+  },
+  {
+    "config": "w/o Stacked Scorer (Legacy MAX)",
+    "recall_high": 35.22,
+    "recall_flagged": 84.91,
+    "fpr_high": 1.61,
+    "fpr_flagged": 10.75,
+    "deva_recall_high": 34.48,
+    "obf_recall_high": 54.35
+  }
+]

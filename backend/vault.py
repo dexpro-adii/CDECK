@@ -33,8 +33,9 @@ from collections import defaultdict
 
 from cryptography.fernet import Fernet, InvalidToken, MultiFernet
 
-PRIMARY_KEY_ENV = "PROMPTKAVACH_VAULT_KEY"
-RETIRED_KEYS_ENV = "PROMPTKAVACH_VAULT_RETIRED_KEYS"
+PRIMARY_KEY_ENV = "CDECK_VAULT_KEY"
+LEGACY_KEY_ENV = "PROMPTKAVACH_VAULT_KEY"
+RETIRED_KEYS_ENV = "CDECK_VAULT_RETIRED_KEYS"
 
 DEFAULT_TTL_SECONDS = 3600      # PII is evicted an hour after it is vaulted
 DEFAULT_MAX_SESSIONS = 5000     # bound on total retained sessions
@@ -45,14 +46,14 @@ def _load_cipher():
     Builds the MultiFernet used for vault values.
 
     The first key encrypts; every key can decrypt. That is the rotation path:
-    move the old key into PROMPTKAVACH_VAULT_RETIRED_KEYS, put a fresh one in
-    PROMPTKAVACH_VAULT_KEY, and previously issued tokens keep resolving.
+    move the old key into CDECK_VAULT_RETIRED_KEYS, put a fresh one in
+    CDECK_VAULT_KEY, and previously issued tokens keep resolving.
 
     With no key configured we generate an ephemeral one and say so loudly --
     a restart then makes old tokens unresolvable, which is the safe failure
     (values become unrecoverable rather than silently readable).
     """
-    primary = (os.environ.get(PRIMARY_KEY_ENV) or "").strip()
+    primary = (os.environ.get(PRIMARY_KEY_ENV) or os.environ.get(LEGACY_KEY_ENV) or "").strip()
     ephemeral = False
 
     if not primary:

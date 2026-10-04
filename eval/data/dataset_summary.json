@@ -1,0 +1,10 @@
+{
+  "attacks_count": 161,
+  "benign_count": 165,
+  "paraphrases_count": 90,
+  "overlap_attacks_removed": 0,
+  "overlap_benign_removed": 0,
+  "overlap_paraphrases_removed": 0,
+  "total_overlap_removed": 0,
+  "known_seed_dataset_size": 950
+}

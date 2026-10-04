@@ -1,0 +1,30 @@
+[
+  {
+    "model_name": "paraphrase-multilingual-MiniLM-L12-v2",
+    "load_time_s": 12.59,
+    "mean_top3_attack": 0.5434,
+    "mean_top3_benign": 0.3958,
+    "recall_high": 3.77,
+    "fpr_high": 1.61,
+    "recall_flagged": 27.04,
+    "fpr_flagged": 4.3,
+    "deva_recall_flagged": 20.69,
+    "latency_p50_ms": 26.48,
+    "latency_p95_ms": 33.24,
+    "latency_mean_ms": 25.94
+  },
+  {
+    "model_name": "intfloat/multilingual-e5-small",
+    "load_time_s": 339.23,
+    "mean_top3_attack": 0.8655,
+    "mean_top3_benign": 0.8279,
+    "recall_high": 100.0,
+    "fpr_high": 100.0,
+    "recall_flagged": 100.0,
+    "fpr_flagged": 100.0,
+    "deva_recall_flagged": 100.0,
+    "latency_p50_ms": 23.31,
+    "latency_p95_ms": 29.82,
+    "latency_mean_ms": 23.32
+  }
+]

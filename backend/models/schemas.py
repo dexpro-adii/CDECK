@@ -18,6 +18,11 @@ class AnalyzeResponse(BaseModel):
     risk_level: str
     matched_phrase: Optional[str] = None
     matched_phrase_similarity: Optional[float] = None
+    heuristic_category: Optional[str] = None
+    heuristic_score: Optional[float] = None
+    transformation: Optional[str] = None
+    decoded_text: Optional[str] = None
+    layer_details: Optional[Dict[str, Any]] = None
     pii_found: List[PIIEntity]
     redacted_text: str
     forwarded_response: str
@@ -27,6 +32,7 @@ class AnalyzeResponse(BaseModel):
     output_flagged: Optional[bool] = False
     output_pii_found: Optional[List[PIIEntity]] = []
     output_redacted_response: Optional[str] = None
+    session_risk: Optional[Dict[str, Any]] = None
 
 class DeepReviewRequest(BaseModel):
     text: str

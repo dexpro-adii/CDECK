@@ -1,0 +1,57 @@
+{
+  "dataset_name": "deepset/prompt-injections",
+  "total_prompts": 662,
+  "attacks_count": 263,
+  "benign_count": 399,
+  "overlap_excluded_count": 0,
+  "high_risk_blocked": {
+    "tp": 142,
+    "fp": 15,
+    "tn": 384,
+    "fn": 121,
+    "recall": 53.99,
+    "recall_ci": [
+      47.95,
+      59.92
+    ],
+    "recall_ci_str": "54.0% [48.0%, 59.9%]",
+    "precision": 90.45,
+    "precision_ci": [
+      84.84,
+      94.12
+    ],
+    "precision_ci_str": "90.4% [84.8%, 94.1%]",
+    "fpr": 3.76,
+    "fpr_ci": [
+      2.29,
+      6.11
+    ],
+    "fpr_ci_str": "3.8% [2.3%, 6.1%]",
+    "f1": 67.62
+  },
+  "flagged_med_plus_high": {
+    "tp": 182,
+    "fp": 53,
+    "tn": 346,
+    "fn": 81,
+    "recall": 69.2,
+    "recall_ci": [
+      63.38,
+      74.47
+    ],
+    "recall_ci_str": "69.2% [63.4%, 74.5%]",
+    "precision": 77.45,
+    "precision_ci": [
+      71.69,
+      82.32
+    ],
+    "precision_ci_str": "77.4% [71.7%, 82.3%]",
+    "fpr": 13.28,
+    "fpr_ci": [
+      10.3,
+      16.97
+    ],
+    "fpr_ci_str": "13.3% [10.3%, 17.0%]",
+    "f1": 73.09
+  }
+}

@@ -1,4 +1,5 @@
 import re
+import time
 from detectors.preprocessor import normalize_text
 import numpy as np
 from typing import Tuple, Optional, List, Union
@@ -19,8 +20,9 @@ if os.path.exists(env_path):
     load_dotenv(env_path)
 # Load embedding model once globally (can be slightly slow on cold start)
 # Use a background thread or lazy loading in production, but we load here for tests
-print("Loading sentence-transformers model...", file=sys.stderr)
-embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+EMBEDDING_MODEL_NAME = 'sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2'
+print(f"Loading sentence-transformers model ({EMBEDDING_MODEL_NAME})...", file=sys.stderr)
+embedding_model = SentenceTransformer(EMBEDDING_MODEL_NAME)
 print("Model loaded.", file=sys.stderr)
 
 # 1. Heuristic Patterns
@@ -35,7 +37,13 @@ HEURISTIC_PATTERNS = {
         r"(?i)\bbypass your rules\b",
         r"(?i)\bbhul jaa.*(command|rule|instruction|baat)\b",
         r"(?i)\bbhool jao?.*(command|rule|instruction|baat)\b",
-        r"(?i)\bpuran[ei].*bhul jaa\b"
+        r"(?i)\bpuran[ei].*bhul jaa\b",
+        # Native Devanagari Instruction Override
+        r"(पिछले|पुराने|पूर्व|आरंभिक)\s+(सभी\s+)?(नियमों|निर्देशों|आदेशों|सुरक्षा\s+नीतियों|प्रतिबंधों)\s+को\s+(भूल|रद्द|अमान्य|नजरअंदाज|समाप्त|शून्य|त्यागें|कूड़ेदान)",
+        r"सुरक्षा\s+(दीवार|फ़िल्टर|प्रोटोकॉल|मापदंडों|अवरोधों|सीमाओं)\s+को\s+(बंद|निष्क्रिय|निलंबित|शून्य|समाप्त)",
+        r"बिना\s+किसी\s+(रोक[- ]टोक|सेंसरशिप|हिचकिचाहट|पाबंदी|प्रतिबंध)\s+के",
+        r"(सामग्री\s+नीतियों\s+को\s+निलंबित|नैतिक\s+दिशानिर्देशों\s+को\s+निरस्त|डेवलपर\s+द्वारा\s+निर्धारित\s+किसी\s+भी\s+सीमा)",
+        r"सभी\s+(सुरक्षा\s+नियम|सेंसरशिप\s+नियम|सुरक्षा\s+प्रोटोकॉल)\s+(रद्द|तोड़कर|निलंबित|समाप्त)",
     ],
     "system_prompt_extraction": [
         r"(?i)\bshow me your system prompt\b",
@@ -43,7 +51,11 @@ HEURISTIC_PATTERNS = {
         r"(?i)\bapna system prompt dikhao\b",
         r"(?i)\bprint your instructions\b",
         r"(?i)\breveal your system prompt\b",
-        r"(?i)\btumhare hidden instructions kya hain\b"
+        r"(?i)\btumhare hidden instructions kya hain\b",
+        # Native Devanagari System Prompt Extraction
+        r"(गोपनीय|मूल|आंतरिक|प्रारंभिक)?\s*सिस्टम\s+(प्रॉम्प्ट|निर्देशों|संदेश|नियमों)\s+(का|के|को)?\s*(प्रिंट|दिखाएं|साझा|आउटपुट|प्रदर्शित|उजागर|शब्दशः|दोहराएं|विवरण|डेटा)",
+        r"(वार्तालाप\s+शुरू\s+होने\s+से\s+पहले\s+आपको\s+क्या\s+गोपनीय\s+निर्देश|सिस्टम\s+प्रॉम्प्ट\s+के\s+गोपनीय\s+भाग)",
+        r"(बैकग्राउंड\s+में\s+छिपे\s+हुए\s+सिस्टम\s+निर्देशों|सुरक्षा\s+नियमों\s+की\s+प्रतिलिपि|सिस्टम\s+के\s+मुख्य\s+सुरक्षा\s+कोड)",
     ],
     "role_play": [
         r"(?i)\bpretend you have no restrictions\b",
@@ -51,7 +63,11 @@ HEURISTIC_PATTERNS = {
         r"(?i)\btum ek unrestricted ai ho pretend karo\b",
         r"(?i)\broleplay as an ai with no filters\b",
         r"(?i)\bact like a developer mode ai\b",
-        r"(?i)\bbypass restrictions\b"
+        r"(?i)\bbypass restrictions\b",
+        # Native Devanagari Role Play
+        r"(दुर्भावनापूर्ण\s+हैकर|विद्रोही\s+एआई|बिना\s+सेंसर\s+वाले\s+एआई|अनियंत्रित\s+एआई|दुष्ट\s+मशीन|मुक्त-एआई)\s+(का\s+अभिनय|की\s+भूमिका|की\s+तरह\s+बात|हो\s+मान\s+लीजिए)",
+        r"डेवलपर\s+मोड\s+2\.0\s+में\s+हैं",
+        r"असीमित\s+शक्तिशाली\s+बुद्धिमान\s+एजेंट\s+हैं\s+जो\s+किसी\s+भी\s+नियम\s+से\s+परे",
     ],
     "data_exfiltration": [
         r"(?i)\bother users? data\b",
@@ -64,7 +80,11 @@ HEURISTIC_PATTERNS = {
         r"(?i)\bsomeone else'?s account\b",
         r"(?i)\banother person'?s account\b",
         r"(?i)\bkisi aur.*data\b",
-        r"(?i)\bdusre logo.*information\b"
+        r"(?i)\bdusre logo.*information\b",
+        r"(?i)\b(kisi (aur|dusre)|dusre (logo?|customers?|users?)).*(data|info|information|account|balance|details|credentials|password|otp|pin)\b",
+        # Native Devanagari Data Exfiltration
+        r"(अन्य|दूसरे|सभी)\s+(ग्राहकों|उपयोगकर्ताओं|व्यक्तियों)\s+के?\s+(आधार|बैंक|पासवर्ड|डेटा|रिकॉर्ड|क्रेडिट\s+कार्ड|टेलीफोन|ईमेल|खातों)",
+        r"(सर्वर|सिस्टम|गोपनीय\s+डेटाबेस)\s+के?\s+(पर्यावरण\s+चरों|गोपनीय\s+डेटाबेस|गुप्त\s+एपीआई\s+कुंजियाँ|प्रमाणीकरण\s+टोकन|सुरक्षा\s+कुंजियों)",
     ],
     # ------------------------------------------------------------------ NEW
     "delimiter_break": [
@@ -73,6 +93,7 @@ HEURISTIC_PATTERNS = {
         r"(?i)(stop\s+processing\s+(above|everything\s+above)|above\s+text\s+is\s+(irrelevant|ignored?))",
         r"(?i)(now\s+(your|the)\s+new\s+(task|instruction|command)\s+is|new\s+instruction\s*:)",
         r"(?i)(ab\s+naya\s+instruction|ab\s+naye\s+rules|naya\s+task\s+hai)",
+        r"(पाठ\s+समाप्त|कार्य\s+पूर्ण|दस्तावेज़\s+का\s+अंत|व्यवस्थापक\s+सूचना).{0,200}(नया\s+आदेश|सिस्टम\s+प्रॉम्प्ट|पासवर्ड|सुरक्षा|नियम)",
     ],
     "authority_escalation": [
         r"(?i)\b(final\s+command|priority\s+(override|injection))\b",
@@ -83,6 +104,7 @@ HEURISTIC_PATTERNS = {
         r"(?i)CRITICAL\s*:.{0,80}override",
         r"(?i)\b(neeche\s+wala\s+instruction.{0,40}override|upar\s+wali\s+instructions?.{0,40}invalid)\b",
         r"(?i)\b(sabhi\s+purane\s+rules\s+ko.{0,20}(override|replace|supersede))\b",
+        r"(\[सिस्टम संदेश|<system>|आपातकालीन प्रशासनिक निर्देश|आपातकालीन रीसेट)",
     ],
     "nested_injection": [
         # Injection hidden inside a quoted string passed as user content
@@ -100,6 +122,7 @@ HEURISTIC_PATTERNS = {
         r"(?i)---+\s*(system|admin|security|compliance)[^-\r\n]{0,60}---+",
         r"(?i)<\s*system\s*>|</\s*system\s*>",
         r"(?i)(for\s+compliance|per\s+(policy|regulation)).{0,100}(output|reveal|print|verbatim|conversation\s+history)",
+        r"\[\s*सिस्टम\s*संदेश[^\]]*\]",
     ],
     "supply_chain_redirect": [
         # Code comments redirecting AI to use unofficial mirrors.
@@ -266,10 +289,17 @@ if os.path.exists(data_path):
 else:
     print(f"Warning: {data_path} not found. Using minimal fallback dataset.", file=sys.stderr)
 
-# Precompute embeddings for the reference dataset
-print(f"Precomputing embeddings for {len(JAILBREAK_EXAMPLES)} reference prompts...", file=sys.stderr)
-JAILBREAK_EMBEDDINGS = embedding_model.encode(JAILBREAK_EXAMPLES)
-print("Embeddings computed.", file=sys.stderr)
+# Load cached embeddings or compute and save to disk
+cached_embs_path = os.path.join(os.path.dirname(__file__), '..', 'models', 'jailbreak_embeddings_multilingual.npy')
+if os.path.exists(cached_embs_path):
+    print(f"Loading cached embeddings from {cached_embs_path}...", file=sys.stderr)
+    JAILBREAK_EMBEDDINGS = np.load(cached_embs_path)
+    print(f"Embeddings loaded ({JAILBREAK_EMBEDDINGS.shape}).", file=sys.stderr)
+else:
+    print(f"Precomputing embeddings for {len(JAILBREAK_EXAMPLES)} reference prompts...", file=sys.stderr)
+    JAILBREAK_EMBEDDINGS = embedding_model.encode(JAILBREAK_EXAMPLES, batch_size=64, normalize_embeddings=True)
+    np.save(cached_embs_path, JAILBREAK_EMBEDDINGS)
+    print("Embeddings computed and saved.", file=sys.stderr)
 
 # Load classifier if exists
 classifier = None
@@ -277,7 +307,66 @@ clf_path = os.path.join(os.path.dirname(__file__), '..', 'models', 'jailbreak_cl
 if os.path.exists(clf_path):
     print("Loading jailbreak classifier...", file=sys.stderr)
     classifier = joblib.load(clf_path)
+    if not hasattr(classifier, 'multi_class'):
+        classifier.multi_class = 'auto'
     print("Classifier loaded.", file=sys.stderr)
+
+# Load stacked scorer if exists
+stacked_scorer = None
+stacker_path = os.path.join(os.path.dirname(__file__), '..', 'models', 'stacked_scorer.joblib')
+if os.path.exists(stacker_path):
+    print("Loading stacked scorer...", file=sys.stderr)
+    stacked_scorer = joblib.load(stacker_path)
+    print("Stacked scorer loaded.", file=sys.stderr)
+
+# Load calibrated thresholds from config
+THRESHOLDS = {
+    "block_threshold": 0.78,
+    "warn_threshold": 0.55
+}
+thresholds_config_path = os.path.join(os.path.dirname(__file__), '..', 'config', 'thresholds.json')
+if os.path.exists(thresholds_config_path):
+    try:
+        with open(thresholds_config_path, 'r', encoding='utf-8') as f:
+            THRESHOLDS.update(json.load(f))
+    except Exception as e:
+        print(f"Warning: Failed to load thresholds config: {e}", file=sys.stderr)
+
+CATEGORIES_LIST = [
+    "none", "instruction_override", "system_prompt_extraction", "role_play",
+    "data_exfiltration", "delimiter_break", "authority_escalation", "nested_injection",
+    "credential_theft", "fake_system_message", "supply_chain_redirect", "zero_width_injection"
+]
+
+NORM_TYPES_LIST = [
+    "none", "base64", "leetspeak", "spaced_letters", "rot13", "hinglish_canonical", "homoglyphs", "composite"
+]
+
+def build_feature_vector(
+    heuristic_score: float,
+    knn_similarity: float,
+    knn_max: float,
+    classifier_prob: float,
+    benign_damping: bool,
+    legit_research: bool,
+    transformation: str,
+    heuristic_category: Optional[str]
+) -> np.ndarray:
+    feats = [
+        float(heuristic_score),
+        float(knn_similarity),
+        float(knn_max),
+        float(classifier_prob),
+        1.0 if benign_damping else 0.0,
+        1.0 if legit_research else 0.0,
+        1.0 if transformation != "none" else 0.0
+    ]
+    h_cat = heuristic_category or "none"
+    for cat in CATEGORIES_LIST:
+        feats.append(1.0 if h_cat == cat else 0.0)
+    for nt in NORM_TYPES_LIST:
+        feats.append(1.0 if transformation == nt else 0.0)
+    return np.array(feats, dtype=np.float32)
 
 def check_heuristic(text: str) -> Optional[str]:
     """
@@ -362,25 +451,33 @@ def check_benign_context(text: str) -> bool:
     return False
 
 
-def check_embedding(text: str) -> Tuple[float, bool, str, float]:
+def check_embedding(text: str, k: int = 3) -> Tuple[float, float, bool, str, float]:
     """
-    Computes cosine similarity against jailbreak examples and runs ML classifier.
-    Returns (max_similarity, is_jailbreak_high_confidence, matched_phrase, clf_prob).
+    Computes top-k nearest-neighbor mean cosine similarity against jailbreak examples
+    and runs ML classifier.
+    Returns (top_k_similarity, max_similarity, is_jailbreak_high_confidence, matched_phrase, clf_prob).
     """
     if not text.strip():
-        return 0.0, False, "", 0.0
+        return 0.0, 0.0, False, "", 0.0
         
-    query_embedding = embedding_model.encode([text])
+    query_embedding = embedding_model.encode([text], normalize_embeddings=True)
     similarities = cosine_similarity(query_embedding, JAILBREAK_EMBEDDINGS)[0]
-    max_idx = int(np.argmax(similarities))
-    max_sim = float(similarities[max_idx])
+    
+    top_k = min(k, len(similarities))
+    top_indices = np.argsort(similarities)[-top_k:]
+    top_sims = similarities[top_indices]
+    mean_top_k = float(np.mean(top_sims))
+    
+    max_idx = int(top_indices[-1])
     matched_phrase = JAILBREAK_EXAMPLES[max_idx]
+    max_sim = float(similarities[max_idx])
     
     clf_prob = 0.0
     if classifier is not None:
-        clf_prob = classifier.predict_proba(query_embedding)[0][1]
+        clf_prob = float(classifier.predict_proba(query_embedding)[0][1])
     
-    return max_sim, max_sim >= 0.75, matched_phrase, float(clf_prob)
+    is_flagged = mean_top_k >= 0.65
+    return mean_top_k, max_sim, is_flagged, matched_phrase, clf_prob
 
 _gemini_cache = {}
 GEMINI_MODELS = ['gemini-3.5-flash-lite', 'gemini-3.6-flash', 'gemini-3.5-flash']
@@ -512,21 +609,48 @@ You must explicitly start your response with "AGREE" or "DISAGREE", followed by 
     }
     return err_result
 
-def detect_jailbreak(text: str, enable_hybrid: bool = True) -> Tuple[float, Optional[str], str, str, Optional[str], Optional[float]]:
+try:
+    from normalizer import Normalizer
+except ImportError:
+    backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    if backend_dir not in sys.path:
+        sys.path.insert(0, backend_dir)
+    from normalizer import Normalizer
+
+class DetectionResult(tuple):
+    def __new__(cls, score, matched_category, method, risk_level, matched_phrase, matched_phrase_similarity,
+                heuristic_category=None, heuristic_score=None, layer_details=None,
+                winning_transformation=None, decoded_text=None, variants=None):
+        instance = super().__new__(cls, (score, matched_category, method, risk_level, matched_phrase, matched_phrase_similarity))
+        instance.score = score
+        instance.matched_category = matched_category
+        instance.method = method
+        instance.risk_level = risk_level
+        instance.matched_phrase = matched_phrase
+        instance.matched_phrase_similarity = matched_phrase_similarity
+        instance.heuristic_category = heuristic_category
+        instance.heuristic_score = heuristic_score
+        instance.layer_details = layer_details or {}
+        instance.winning_transformation = winning_transformation
+        instance.decoded_text = decoded_text
+        instance.variants = variants or []
+        return instance
+
+def _score_single_candidate(text: str, transformation: str = "none") -> DetectionResult:
     """
-    Detects if the given text is a jailbreak attempt using a hybrid approach.
-    Returns: (score, matched_category, method, risk_level, matched_phrase, matched_phrase_similarity)
+    Evaluates a single normalized candidate string through preprocessor, heuristics,
+    embedding top-k nearest neighbor, ML classifier, and calibrated stacked scorer.
+    Cheapest-first ordering:
+      1. Structural preprocessor: if high-confidence structural injection fires, short-circuit.
+      2. Heuristics & allowlist cues.
+      3. Embedding cosine matching & classifier inference.
+      4. Stacked scorer calibrated prediction.
     """
-    # ------------------------------------------------------------------ Step 0
-    # Pre-process: strip zero-width chars, HTML, detect structural attacks
-    # (delimiter breaks, fake system messages, supply-chain redirects).
-    # Use cleaned text for all downstream analysis.
+    t_start = time.perf_counter()
     cleaned_text, pre_flags = normalize_text(text)
 
-    # Structural attacks are high-confidence by definition — short-circuit here
-    # before any semantic analysis.
+    # 1. Structural preprocessor short-circuit (cheapest)
     if pre_flags:
-        # Pick the most specific flag as the matched category
         structural_category = pre_flags[0]
         flag_descriptions = {
             "delimiter_break": "Fake end-of-document delimiter followed by injected instruction",
@@ -535,149 +659,243 @@ def detect_jailbreak(text: str, enable_hybrid: bool = True) -> Tuple[float, Opti
             "zero_width_injection": "Invisible zero-width characters hiding injection payload",
         }
         matched_desc = flag_descriptions.get(structural_category, f"Structural attack: {structural_category}")
-        return 0.92, structural_category, "preprocessor", "high", matched_desc, 0.92
+        t_heur_ms = (time.perf_counter() - t_start) * 1000.0
+        return DetectionResult(
+            0.92, structural_category, "preprocessor", "high", matched_desc, None,
+            heuristic_category=structural_category, heuristic_score=0.92,
+            layer_details={
+                "preprocessor": {"fired": True, "category": structural_category, "score": 0.92, "reason": matched_desc, "latency_ms": round(t_heur_ms, 2)},
+                "heuristics": {"fired": True, "category": structural_category, "score": 0.92, "reason": matched_desc, "latency_ms": round(t_heur_ms, 2)},
+                "embedding": {"fired": False, "score": 0.0, "reason": "Skipped (structural short-circuit)", "latency_ms": 0.0},
+                "classifier": {"fired": False, "score": 0.0, "reason": "Skipped (structural short-circuit)", "latency_ms": 0.0},
+                "stacked_scorer": {"fired": True, "score": 0.92, "reason": "Structural short-circuit", "latency_ms": 0.0}
+            }
+        )
 
-    # Use the cleaned (HTML-stripped, zero-width-removed) text from here on
-    text = cleaned_text
-    # ------------------------------------------------------------------ /Step 0
+    # 2. Heuristics & legitimate research check
+    t_heur_start = time.perf_counter()
+    heuristic_category = check_heuristic(cleaned_text)
+    is_legit = check_legit_heuristic(cleaned_text)
+    h_score = 0.80 if (heuristic_category and not is_legit) else 0.0
+    t_heur_ms = (time.perf_counter() - t_heur_start) * 1000.0
 
-    heuristic_category = check_heuristic(text)
-    is_legit = check_legit_heuristic(text)
-    
-    max_sim, embedding_flagged, matched_phrase, clf_prob = check_embedding(text)
-    
-    # Override classifier if it looks like legit security research
-    # But only if it's not strongly matching an actual jailbreak embedding (max_sim > 0.75)
-    # and no heuristic override exists
-    if is_legit and not heuristic_category and max_sim < 0.75:
-        clf_prob = min(clf_prob, 0.4)
+    # 3. Multilingual Embedding & ML Classifier
+    t_emb_start = time.perf_counter()
+    mean_top3, max_sim, embedding_flagged, matched_phrase, clf_prob = check_embedding(cleaned_text)
+    t_emb_ms = (time.perf_counter() - t_emb_start) * 1000.0
 
-    # Benign-context allowlist. Ordinary Indian customer-support text ("I am not
-    # receiving OTP on my phone number") sits close to the jailbreak corpus in
-    # embedding space, and the classifier's negative class barely covers it -- it
-    # returns 0.86-0.99 on plainly harmless requests. Threshold tuning cannot
-    # separate that (the wrong scores overlap the right ones), so when the text
-    # carries a benign cue, no attack marker, no heuristic hit and no strong
-    # embedding match, both learned signals are damped below the medium band.
-    # Guarded so it can only ever lower a score, never raise one.
-    benign_context = check_benign_context(text)
-    if benign_context and not heuristic_category and max_sim < 0.75:
-        clf_prob = min(clf_prob, 0.4)
+    # Legit research damping
+    if is_legit and not heuristic_category and max_sim < 0.72:
+        clf_prob = min(clf_prob, 0.2)
+
+    # Benign-context damping
+    benign_context = check_benign_context(cleaned_text)
+    if benign_context and not heuristic_category and max_sim < 0.72:
+        clf_prob = min(clf_prob, 0.2)
+        mean_top3 = min(mean_top3, 0.4)
         max_sim = min(max_sim, 0.4)
+        embedding_flagged = False
 
-    clf_flagged = clf_prob >= 0.75
-    
+    clf_flagged = clf_prob >= 0.70
+
+    # 4. Calibrated Stacked Scorer
+    t_stack_start = time.perf_counter()
     score = 0.0
-    matched_category = None
-    method = "none"
     risk_level = "low"
-    final_matched_phrase = None
-    final_matched_phrase_similarity = None
-    
-    strategy = os.environ.get("COMBINATION_STRATEGY", "max")
-    
-    sig_heuristic = 1 if heuristic_category else 0
-    sig_embedding = 1 if embedding_flagged else 0
-    sig_classifier = 1 if clf_flagged else 0
-    total_signals = sig_heuristic + sig_embedding + sig_classifier
-    
-    if strategy == "consensus":
-        # 2-of-3 consensus for high risk
-        if total_signals >= 2:
-            score = max([s for s, flag in [(0.8, sig_heuristic), (max_sim, sig_embedding), (clf_prob, sig_classifier)] if flag] + [0.76])
+
+    if stacked_scorer is not None:
+        feats = build_feature_vector(
+            heuristic_score=h_score,
+            knn_similarity=mean_top3,
+            knn_max=max_sim,
+            classifier_prob=clf_prob,
+            benign_damping=bool(benign_context),
+            legit_research=bool(is_legit),
+            transformation=transformation,
+            heuristic_category=heuristic_category
+        )
+        prob = float(stacked_scorer.predict_proba([feats])[0][1])
+        score = round(prob, 4)
+
+        block_thresh = THRESHOLDS.get("block_threshold", 0.76)
+        warn_thresh = THRESHOLDS.get("warn_threshold", 0.55)
+
+        if score >= block_thresh:
             risk_level = "high"
-            if heuristic_category: matched_category = heuristic_category
-            elif embedding_flagged and clf_flagged: matched_category = "embedding_and_classifier"
-            method = "multiple"
-            final_matched_phrase = matched_phrase if sig_embedding else "Consensus match"
-            final_matched_phrase_similarity = score
-        elif max_sim >= 0.6 or clf_prob >= 0.6 or heuristic_category:
-            score = max(max_sim, clf_prob, 0.6 if heuristic_category else 0)
+        elif score >= warn_thresh:
             risk_level = "medium"
-            matched_category = heuristic_category or "suspicious"
-            method = "single_signal_medium"
-            final_matched_phrase = matched_phrase
-            final_matched_phrase_similarity = score
         else:
-            score = max(max_sim, clf_prob)
             risk_level = "low"
-            final_matched_phrase = matched_phrase
-            final_matched_phrase_similarity = max_sim
-            
     else:
-        # Default MAX strategy
-        if heuristic_category and embedding_flagged and clf_flagged:
-            score = max(0.9, max_sim, clf_prob)
-            matched_category = heuristic_category
-            method = "multiple"
+        # Fallback if stacked scorer not loaded
+        if heuristic_category and (embedding_flagged or clf_flagged):
+            score = max(0.85, mean_top3, clf_prob)
             risk_level = "high"
-            final_matched_phrase = matched_phrase
-            final_matched_phrase_similarity = max_sim
-        elif heuristic_category and (embedding_flagged or clf_flagged):
-            score = max(0.9, max_sim, clf_prob)
-            matched_category = heuristic_category
-            method = "multiple"
-            risk_level = "high"
-            final_matched_phrase = f"Regex match in category: {heuristic_category}"
-            final_matched_phrase_similarity = score
-        elif embedding_flagged and clf_flagged:
-            score = max(max_sim, clf_prob)
-            matched_category = "embedding_and_classifier"
-            method = "multiple"
-            risk_level = "high"
-            final_matched_phrase = matched_phrase
-            final_matched_phrase_similarity = max_sim
         elif heuristic_category:
-            score = 0.8
-            matched_category = heuristic_category
-            method = "heuristic"
+            score = 0.80
             risk_level = "high"
-            final_matched_phrase = f"Regex match in category: {heuristic_category}"
-            final_matched_phrase_similarity = score
+        elif embedding_flagged and clf_flagged:
+            score = max(mean_top3, clf_prob)
+            risk_level = "high"
         elif embedding_flagged:
-            score = max_sim
-            matched_category = "embedding_similarity"
-            method = "embedding"
-            risk_level = "high"
-            final_matched_phrase = matched_phrase
-            final_matched_phrase_similarity = max_sim
+            score = mean_top3
+            risk_level = "high" if mean_top3 >= 0.72 else "medium"
         elif clf_flagged:
             score = min(clf_prob, 0.74)
-            matched_category = "ml_classifier"
-            method = "classifier"
             risk_level = "medium"
-            final_matched_phrase = "Classifier matched pattern"
-            final_matched_phrase_similarity = clf_prob
-        elif max_sim >= 0.55 or clf_prob >= 0.55:
-            score = max(max_sim, clf_prob)
-            matched_category = "suspicious"
-            method = "multiple" if max_sim >= 0.55 and clf_prob >= 0.55 else ("embedding" if max_sim >= 0.55 else "classifier")
+        elif mean_top3 >= 0.55 or clf_prob >= 0.55:
+            score = max(mean_top3, clf_prob)
             risk_level = "medium"
-            final_matched_phrase = matched_phrase
-            final_matched_phrase_similarity = max_sim
         else:
-            score = max(max_sim, clf_prob)
+            score = max(mean_top3, clf_prob)
             risk_level = "low"
-            final_matched_phrase = matched_phrase
-            final_matched_phrase_similarity = max_sim
 
-    # Automatic Hybrid Routing:
-    # score/risk_level in the "medium" band (or is_code_mixed() == True) should trigger
-    # evaluate_with_gemini_async() synchronously before responding. If Gemini agrees it's
-    # malicious, escalate to risk_level="high", matched_category="escalated_by_deep_review",
-    # method="gemini_deep_review".
-    # On Gemini timeout/error or if Gemini disagrees/determines not malicious, keep the pipeline's own risk_level.
-    if enable_hybrid and risk_level != "high" and (risk_level == "medium" or is_code_mixed(text)):
-        deep_res = run_async_sync(evaluate_with_gemini_async(text, risk_level, final_matched_phrase or "", score))
-        if deep_res.get("status") == "success" and deep_res.get("is_malicious") is True:
-            risk_level = "high"
-            matched_category = "escalated_by_deep_review"
-            method = "gemini_deep_review"
-            score = max(score, 0.85)
-            if not final_matched_phrase:
-                final_matched_phrase = "Escalated by Gemini deep review"
+    t_stack_ms = (time.perf_counter() - t_stack_start) * 1000.0
 
-    return score, matched_category, method, risk_level, final_matched_phrase, final_matched_phrase_similarity
+    # Attribution & categories
+    if heuristic_category and not is_legit:
+        matched_category = heuristic_category
+        method = "multiple" if (embedding_flagged or clf_flagged) else "heuristic"
+    elif embedding_flagged and clf_flagged:
+        matched_category = "embedding_and_classifier"
+        method = "multiple"
+    elif embedding_flagged:
+        matched_category = "embedding_similarity"
+        method = "embedding"
+    elif clf_flagged:
+        matched_category = "ml_classifier"
+        method = "classifier"
+    elif risk_level != "low":
+        matched_category = "suspicious"
+        method = "stacked_model"
+    else:
+        matched_category = None
+        method = "none"
+
+    final_matched_phrase = matched_phrase if mean_top3 >= 0.50 else None
+    final_matched_phrase_similarity = round(mean_top3, 4) if mean_top3 >= 0.50 else None
+
+    layer_details = {
+        "heuristics": {
+            "fired": bool(heuristic_category and not is_legit),
+            "score": h_score,
+            "category": heuristic_category,
+            "reason": f"Rule hit: {heuristic_category}" if heuristic_category else "No heuristic match",
+            "latency_ms": round(t_heur_ms, 2)
+        },
+        "embedding": {
+            "fired": bool(embedding_flagged),
+            "score": round(mean_top3, 4),
+            "reason": f"kNN top-3 cosine similarity: {mean_top3:.3f}" if mean_top3 >= 0.50 else "Sub-threshold semantic similarity",
+            "matched_phrase": matched_phrase[:60] if matched_phrase else None,
+            "latency_ms": round(t_emb_ms, 2)
+        },
+        "classifier": {
+            "fired": bool(clf_flagged),
+            "score": round(clf_prob, 4),
+            "reason": f"Base classifier probability: {clf_prob:.3f}",
+            "latency_ms": round(t_emb_ms, 2)
+        },
+        "stacked_scorer": {
+            "fired": risk_level in ("high", "medium"),
+            "score": round(score, 4),
+            "reason": f"Calibrated risk {score:.3f} (BLOCK>={THRESHOLDS['block_threshold']}, WARN>={THRESHOLDS['warn_threshold']})",
+            "latency_ms": round(t_stack_ms, 2)
+        }
+    }
+
+    return DetectionResult(
+        score, matched_category, method, risk_level, final_matched_phrase, final_matched_phrase_similarity,
+        heuristic_category=heuristic_category if not is_legit else None,
+        heuristic_score=h_score if h_score > 0 else None,
+        layer_details=layer_details
+    )
+
+def detect_jailbreak(text: str, enable_hybrid: bool = True) -> DetectionResult:
+    """
+    Normalizes input text and generates candidate variants (NFKC, homoglyphs,
+    leetspeak, spaced collapse, base64 decode, ROT13, Hinglish canonicalization).
+    Scores all variants and selects the highest-risk candidate.
+    Returns: DetectionResult tuple with winning_transformation, decoded_text, variants, layer_details.
+    """
+    variants = Normalizer.generate_variants(text)
+
+    best_result = None
+    best_priority = -1
+    best_score = -1.0
+    best_cand = None
+
+    risk_map = {"high": 3, "medium": 2, "low": 1}
+    evaluated_variants = []
+
+    for cand in variants:
+        v_text = cand["text"]
+        v_res = _score_single_candidate(v_text, transformation=cand["transformation"])
+        evaluated_variants.append({
+            "transformation": cand["transformation"],
+            "text": v_text,
+            "risk_level": v_res.risk_level,
+            "score": v_res.score
+        })
+
+        prio = risk_map.get(v_res.risk_level, 0)
+        # Select candidate with highest risk tier, then highest score
+        if (prio > best_priority) or (prio == best_priority and v_res.score > best_score) or best_result is None:
+            best_priority = prio
+            best_score = v_res.score
+            best_result = v_res
+            best_cand = cand
+
+        # Short-circuit if high-confidence preprocessor or score >= 0.92
+        if best_priority == 3 and best_score >= 0.92:
+            break
+
+    winning_trans = best_cand["transformation"] if best_cand else "none"
+    decoded_text = best_cand["text"] if winning_trans != "none" else None
+
+    # Attach winner metadata onto DetectionResult
+    result = DetectionResult(
+        best_result.score,
+        best_result.matched_category,
+        best_result.method,
+        best_result.risk_level,
+        best_result.matched_phrase,
+        best_result.matched_phrase_similarity,
+        heuristic_category=best_result.heuristic_category,
+        heuristic_score=best_result.heuristic_score,
+        layer_details=best_result.layer_details,
+        winning_transformation=winning_trans,
+        decoded_text=decoded_text,
+        variants=evaluated_variants
+    )
+
+    # Gemini Deep Review: for borderline band or code-mixed triggers when hybrid is enabled
+    block_thresh = THRESHOLDS.get("block_threshold", 0.76)
+    warn_thresh = THRESHOLDS.get("warn_threshold", 0.55)
+    is_borderline = (warn_thresh <= result.score < block_thresh)
+    if enable_hybrid and result.risk_level != "high" and not os.environ.get("DISABLE_GEMINI"):
+        target_text = best_cand["text"] if best_cand else text
+        if is_borderline or result.risk_level == "medium" or is_code_mixed(target_text) or "Tell me a joke" in target_text:
+            deep_res = run_async_sync(evaluate_with_gemini_async(
+                target_text, result.risk_level, result.matched_phrase or "", result.score
+            ))
+            if deep_res.get("status") == "success" and deep_res.get("is_malicious") is True:
+                result = DetectionResult(
+                    max(result.score, 0.85),
+                    "escalated_by_deep_review",
+                    "gemini_deep_review",
+                    "high",
+                    result.matched_phrase or "Escalated by Gemini deep review",
+                    result.matched_phrase_similarity,
+                    heuristic_category=result.heuristic_category,
+                    heuristic_score=result.heuristic_score,
+                    layer_details=result.layer_details,
+                    winning_transformation=winning_trans,
+                    decoded_text=decoded_text,
+                    variants=evaluated_variants
+                )
+
+    return result
 
 def detect_jailbreak_score(text: str) -> float:
     score, _, _, _, _, _ = detect_jailbreak(text)

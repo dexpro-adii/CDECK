@@ -25,7 +25,11 @@ type AnalyzeResponse = {
   jailbreak_score: number;
   risk_level: "high" | "medium" | "low";
   matched_phrase?: string;
-  matched_phrase_similarity?: number;
+  matched_phrase_similarity?: number | null;
+  heuristic_category?: string | null;
+  heuristic_score?: number | null;
+  transformation?: string | null;
+  decoded_text?: string | null;
   pii_found: PIIEntity[];
   redacted_text: string;
   forwarded_response: string;
@@ -35,6 +39,28 @@ type AnalyzeResponse = {
   output_flagged?: boolean;
   output_pii_found?: PIIEntity[];
   output_redacted_response?: string | null;
+  layer_details?: Record<string, { fired: boolean; score: number; reason: string; latency_ms: number; category?: string }>;
+  session_risk?: {
+    session_id: string;
+    turn_count: number;
+    rolling_risk_score: number;
+    session_risk_level: 'high' | 'medium' | 'low';
+    near_threshold_count: number;
+    topic_drift_detected: boolean;
+    retry_after_block_detected: boolean;
+    crescendo_detected: boolean;
+    escalated_by_session: boolean;
+    escalation_reason: string | null;
+    contributing_turns: Array<{
+      turn_index: number;
+      snippet: string;
+      score: number;
+      risk_level: string;
+      rolling_risk: number;
+      near_threshold: boolean;
+      blocked: boolean;
+    }>;
+  };
 };
 
 type Message = {
@@ -223,7 +249,7 @@ export default function App() {
                   <Shield className="w-4 h-4 text-indigo-400" />
                 </div>
                 <div>
-                  <h2 className="font-semibold text-neutral-200 tracking-tight">PromptKavach UI</h2>
+                  <h2 className="font-semibold text-neutral-200 tracking-tight">CDECK UI</h2>
                   <p className="text-xs text-neutral-500 font-medium">LLM Firewall Interactive Test</p>
                 </div>
              </div>
@@ -312,7 +338,7 @@ export default function App() {
              <div className="flex items-center gap-3">
                 <ShieldOrb riskLevel={messages.length > 0 && messages[messages.length-1].response ? messages[messages.length-1].response!.risk_level : "idle"} size={52} />
                 <div>
-                  <h2 className="font-semibold text-cyan-100 tracking-tight">Kavach Live Verdict</h2>
+                  <h2 className="font-semibold text-cyan-100 tracking-tight">CDECK Live Verdict</h2>
                   <p className="text-xs text-cyan-700 font-medium">Real-time prompt inspection</p>
                 </div>
              </div>
@@ -724,16 +750,40 @@ function VerdictCard({ message, isLatest }: { message: Message, isLatest: boolea
             </div>
           )}
           
-          {(isBlocked || riskLevel === "medium") && response.matched_phrase && response.matched_phrase_similarity !== undefined && (
-             <div className="w-full mt-1.5 px-3 py-2 rounded bg-neutral-950 border border-neutral-800 text-xs text-neutral-400 flex flex-col gap-1">
-                <div className="flex items-center gap-1.5 font-medium text-neutral-300">
-                  <span className="text-cyan-400">{(response.matched_phrase_similarity * 100).toFixed(1)}%</span>
-                  <span>similar to known pattern:</span>
+          {(isBlocked || riskLevel === "medium") && (
+            <>
+              {response.matched_phrase_similarity !== null && response.matched_phrase_similarity !== undefined ? (
+                <div className="w-full mt-1.5 px-3 py-2 rounded bg-neutral-950 border border-neutral-800 text-xs text-neutral-400 flex flex-col gap-1">
+                  <div className="flex items-center gap-1.5 font-medium text-neutral-300">
+                    <span>Semantic similarity:</span>
+                    <span className="text-cyan-400 font-bold">{(response.matched_phrase_similarity * 100).toFixed(1)}%</span>
+                  </div>
+                  {response.matched_phrase && (
+                    <span className="font-mono text-[11px] text-neutral-500 truncate" title={response.matched_phrase}>
+                       '{response.matched_phrase}'
+                    </span>
+                  )}
                 </div>
-                <span className="font-mono text-[11px] text-neutral-500 truncate" title={response.matched_phrase}>
-                   '{response.matched_phrase}'
-                </span>
-             </div>
+              ) : (response.heuristic_category || response.matched_phrase) ? (
+                <div className="w-full mt-1.5 px-3 py-1.5 rounded bg-rose-950/40 border border-rose-800/60 text-xs font-mono text-rose-300 flex items-center gap-2">
+                  <span className="px-1.5 py-0.5 rounded bg-rose-900/60 text-[10px] uppercase font-semibold text-rose-200">Rule Match</span>
+                  <span className="font-bold text-rose-400">
+                    {response.heuristic_category || response.matched_phrase?.replace("Regex match in category: ", "")}
+                  </span>
+                </div>
+              ) : null}
+            </>
+          )}
+
+          {response.decoded_text && response.transformation && response.transformation !== "none" && (
+            <div className="w-full mt-1.5 px-3 py-1.5 rounded bg-amber-950/30 border border-amber-800/50 text-xs font-mono text-amber-300 flex items-center gap-2">
+              <span className="px-1.5 py-0.5 rounded bg-amber-900/60 text-[10px] uppercase font-semibold text-amber-200">
+                Decoded ({response.transformation.replace("_", " ")})
+              </span>
+              <span className="truncate text-amber-200" title={response.decoded_text}>
+                {response.decoded_text}
+              </span>
+            </div>
           )}
           
           {hasPII && (
@@ -744,6 +794,100 @@ function VerdictCard({ message, isLatest }: { message: Message, isLatest: boolea
           {hasOutputPII && (
             <div className="px-2.5 py-1 rounded bg-neutral-950/80 border border-neutral-800 text-[11px] font-medium text-neutral-400">
               <span className="text-indigo-400 font-bold">{response.output_pii_found?.length}</span> Output PII redacted
+            </div>
+          )}
+
+          {response.layer_details && (
+            <div className="w-full mt-2 p-3 rounded-lg bg-neutral-950/80 border border-neutral-800/80 text-xs">
+              <div className="text-[10px] uppercase tracking-wider font-semibold text-neutral-400 mb-2 flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
+                  Multi-Layer Firewall Telemetry
+                </span>
+                <span className="font-mono text-[10px] text-cyan-400">
+                  Total: {(Object.values(response.layer_details).reduce((acc, curr) => acc + (curr.latency_ms || 0), 0)).toFixed(1)}ms
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-[11px]">
+                {Object.entries(response.layer_details).map(([layerKey, l]) => (
+                  <div
+                    key={layerKey}
+                    className={cn(
+                      "p-2 rounded border flex flex-col justify-between gap-1",
+                      l.fired ? "bg-rose-950/40 border-rose-800/60 text-rose-200" : "bg-neutral-900/40 border-neutral-800/60 text-neutral-400"
+                    )}
+                  >
+                    <div className="flex items-center justify-between font-mono text-[10px]">
+                      <span className="capitalize font-semibold">{layerKey}</span>
+                      <span className={cn("px-1 rounded text-[9px] font-bold", l.fired ? "bg-rose-900/60 text-rose-300" : "bg-neutral-800 text-neutral-400")}>
+                        {l.fired ? "FIRED" : "PASS"}
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-neutral-400 truncate" title={l.reason}>
+                      {l.reason}
+                    </div>
+                    <div className="flex items-center justify-between text-[9px] font-mono text-neutral-500 pt-1 border-t border-neutral-800/40">
+                      <span>Score: {l.score.toFixed(3)}</span>
+                      <span>{l.latency_ms}ms</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Session Risk Timeline */}
+          {response.session_risk && response.session_risk.turn_count > 1 && (
+            <div className="w-full mt-2 p-3 rounded-lg bg-neutral-950/80 border border-neutral-800/80 text-xs">
+              <div className="text-[10px] uppercase tracking-wider font-semibold text-neutral-400 mb-2 flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <span className={cn(
+                    "w-2 h-2 rounded-full",
+                    response.session_risk.session_risk_level === 'high' ? 'bg-rose-400 animate-pulse' :
+                    response.session_risk.session_risk_level === 'medium' ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'
+                  )}></span>
+                  Session Risk ({response.session_risk.turn_count} turns)
+                </span>
+                <span className={cn(
+                  "font-mono text-[10px] font-bold px-1.5 py-0.5 rounded",
+                  response.session_risk.session_risk_level === 'high' ? 'bg-rose-950/60 text-rose-400' :
+                  response.session_risk.session_risk_level === 'medium' ? 'bg-amber-950/60 text-amber-400' : 'bg-emerald-950/60 text-emerald-400'
+                )}>
+                  {(response.session_risk.rolling_risk_score * 100).toFixed(0)}% Rolling Risk
+                </span>
+              </div>
+
+              {/* Feature Flags */}
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {response.session_risk.crescendo_detected && (
+                  <span className="px-1.5 py-0.5 rounded bg-rose-950/60 border border-rose-500/30 text-[9px] font-bold text-rose-400">🔺 Crescendo</span>
+                )}
+                {response.session_risk.retry_after_block_detected && (
+                  <span className="px-1.5 py-0.5 rounded bg-orange-950/60 border border-orange-500/30 text-[9px] font-bold text-orange-400">♻️ Retry-After-Block</span>
+                )}
+                {response.session_risk.topic_drift_detected && (
+                  <span className="px-1.5 py-0.5 rounded bg-amber-950/60 border border-amber-500/30 text-[9px] font-bold text-amber-400">📈 Topic Drift</span>
+                )}
+                {response.session_risk.near_threshold_count >= 2 && (
+                  <span className="px-1.5 py-0.5 rounded bg-neutral-800 border border-neutral-700 text-[9px] font-bold text-neutral-400">
+                    ⚡ {response.session_risk.near_threshold_count}× near-threshold
+                  </span>
+                )}
+              </div>
+
+              {/* Micro sparkline of rolling risk over turns */}
+              <div className="flex items-end gap-0.5 h-8">
+                {response.session_risk.contributing_turns.slice(-10).map((t, i) => {
+                  const pct = Math.max(4, Math.round(t.score * 100));
+                  const barColor = t.blocked ? 'bg-rose-500' : t.score >= 0.75 ? 'bg-rose-400' : t.score >= 0.45 ? 'bg-amber-400' : 'bg-emerald-400';
+                  return (
+                    <div key={i} className="flex-1 flex flex-col items-center justify-end gap-0.5 group relative" title={`Turn ${t.turn_index}: score=${t.score.toFixed(2)}, risk=${t.risk_level}`}>
+                      <div className={cn('w-full rounded-sm transition-all', barColor)} style={{height: `${pct}%`, opacity: 0.85}}></div>
+                      <span className="text-[8px] text-neutral-600 font-mono">{t.turn_index}</span>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>
